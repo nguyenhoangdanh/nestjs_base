@@ -11,6 +11,8 @@ import {
 import { RedisHealthService } from './redis-health.service';
 import { RedisPublisher } from './redis-publisher.service';
 import { RedisCacheService } from './redis-cache.service';
+import { EVENT_PUBLISHER } from 'src/share/di-token';
+import { RedisEventPublisherAdapter } from './redis.interfaces';
 
 // Mock Redis Client cho môi trường dev
 class MockRedisClient {
@@ -354,18 +356,54 @@ const services: Provider[] = [
 @Module({
   imports: [ConfigModule],
   providers: [
-    ...services,
-    redisProvider,
-    redisSubscriberFactoryProvider,
-    redisHealthProvider,
-    redisPublisherProvider,
+    // Redis client provider (giữ nguyên)
+    {
+      provide: REDIS_CLIENT,
+      useFactory: (configService: ConfigService) => {
+        // Giữ nguyên phần tạo client
+      },
+      inject: [ConfigService],
+    },
+    
+    // Redis subscriber factory provider (giữ nguyên)
+    {
+      provide: REDIS_SUBSCRIBER_FACTORY,
+      useFactory: (configService: ConfigService) => {
+        // Giữ nguyên phần tạo factory
+      },
+      inject: [ConfigService],
+    },
+    
+    // Các service providers
+    {
+      provide: REDIS_HEALTH_SERVICE,
+      useClass: RedisHealthService,
+    },
+    {
+      provide: REDIS_PUBLISHER,
+      useClass: RedisPublisher,
+    },
+    {
+      provide: REDIS_CACHE_SERVICE,
+      useClass: RedisCacheService,
+    },
+    
+    // Thêm adapter cho event publisher
+    {
+      provide: EVENT_PUBLISHER,
+      useFactory: (redisPublisher) => {
+        return new RedisEventPublisherAdapter(redisPublisher);
+      },
+      inject: [REDIS_PUBLISHER],
+    },
   ],
   exports: [
-    REDIS_CACHE_SERVICE,
     REDIS_CLIENT,
     REDIS_SUBSCRIBER_FACTORY,
     REDIS_HEALTH_SERVICE,
     REDIS_PUBLISHER,
+    REDIS_CACHE_SERVICE,
+    EVENT_PUBLISHER,
   ],
 })
 export class RedisModule {}

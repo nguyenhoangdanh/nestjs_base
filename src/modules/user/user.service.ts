@@ -33,7 +33,7 @@ import {
   User,
   UserStatus,
 } from './user.model';
-import { ITokenService, IUserRepository, IUserService } from './user.port';
+import { IUserRepository, IUserService } from './user.port';
 import { ROLE_SERVICE } from '../role/role.di-token';
 import { IRoleService } from '../role/role.port';
 
@@ -43,8 +43,6 @@ export class UserService implements IUserService {
 
   constructor(
     @Inject(USER_REPOSITORY) private readonly userRepo: IUserRepository,
-    @Inject(TOKEN_SERVICE) private readonly tokenService: ITokenService,
-    @Inject(ROLE_SERVICE) private readonly roleService: IRoleService,
   ) {}
 
   // Authentication methods
@@ -343,13 +341,11 @@ export class UserService implements IUserService {
         throw AppError.from(ErrNotFound, 404);
       }
 
-      // Exclude sensitive information
+      // Loại trừ thông tin nhạy cảm
       const { password, salt, ...userInfo } = user;
       return userInfo;
     } catch (error) {
       if (error instanceof AppError && error.message === 'Not found') {
-        // Convert "Not found" errors to Unauthorized for profile requests
-        // This helps when a token contains a deleted user ID
         throw AppError.from(
           new Error('Người dùng không tồn tại, vui lòng đăng nhập lại'),
           401,
@@ -364,23 +360,23 @@ export class UserService implements IUserService {
     userId: string,
     dto: UserUpdateDTO,
   ): Promise<void> {
-    // Check if user exists
+    // Kiểm tra người dùng tồn tại
     const user = await this.userRepo.get(userId);
     if (!user) {
       throw AppError.from(ErrNotFound, 404);
     }
 
-    // Check permissions:
-    // 1. User can update their own profile (but with limited fields)
-    // 2. ADMIN and SUPER_ADMIN can update any user
-    // 3. Managers can update users in their hierarchy
+    // Kiểm tra quyền hạn:
+    // 1. Người dùng có thể cập nhật hồ sơ của chính mình (nhưng với các trường hạn chế)
+    // 2. ADMIN và SUPER_ADMIN có thể cập nhật bất kỳ người dùng nào
+    // 3. Quản lý có thể cập nhật người dùng trong phân cấp của họ
     const isSelfUpdate = requester.sub === userId;
     const isAdmin =
       requester.role === UserRole.ADMIN ||
       requester.role === UserRole.SUPER_ADMIN;
 
     if (!isSelfUpdate && !isAdmin) {
-      // Check hierarchical permissions for managers
+      // Kiểm tra quyền hạn phân cấp cho người quản lý
       const hasAccess = await this.canAccessEntity(
         requester.sub,
         'user',
@@ -390,13 +386,13 @@ export class UserService implements IUserService {
         throw AppError.from(ErrPermissionDenied, 403);
       }
 
-      // Non-admins cannot change status or role
+      // Người không phải admin không thể thay đổi trạng thái hoặc vai trò
       if (dto.status !== undefined || dto.roleId !== undefined) {
         throw AppError.from(ErrPermissionDenied, 403);
       }
     }
 
-    // If it's a self-update by a non-admin, restrict the fields that can be updated
+    // Nếu là cập nhật bởi chính người dùng (không phải admin), hạn chế các trường có thể cập nhật
     if (isSelfUpdate && !isAdmin) {
       const { avatar, fullName, email, phone } = dto;
       await this.userRepo.update(userId, {
@@ -407,7 +403,7 @@ export class UserService implements IUserService {
         updatedAt: new Date(),
       });
     } else {
-      // For admins or managers, update all allowed fields
+      // Đối với admin hoặc người quản lý, cập nhật tất cả các trường được phép
       await this.userRepo.update(userId, { ...dto, updatedAt: new Date() });
     }
 
@@ -415,13 +411,13 @@ export class UserService implements IUserService {
   }
 
   async delete(requester: Requester, userId: string): Promise<void> {
-    // Check if user exists
+    // Kiểm tra người dùng tồn tại
     const user = await this.userRepo.get(userId);
     if (!user) {
       throw AppError.from(ErrNotFound, 404);
     }
 
-    // Check permissions (only self, ADMIN, or SUPER_ADMIN can delete)
+    // Kiểm tra quyền hạn (chỉ có bản thân, ADMIN hoặc SUPER_ADMIN có thể xóa)
     const isSelf = requester.sub === userId;
     const isAdmin =
       requester.role === UserRole.ADMIN ||
@@ -431,7 +427,7 @@ export class UserService implements IUserService {
       throw AppError.from(ErrPermissionDenied, 403);
     }
 
-    // Soft delete the user (change status to DELETED)
+    // Xóa mềm người dùng (thay đổi trạng thái thành DELETED)
     await this.userRepo.delete(userId, false);
 
     this.logger.log(`User deleted: ${userId} by ${requester.sub}`);
@@ -439,13 +435,13 @@ export class UserService implements IUserService {
 
   // Password management methods
   async changePassword(userId: string, dto: ChangePasswordDTO): Promise<void> {
-    // Get user
+    // Lấy thông tin người dùng
     const user = await this.userRepo.get(userId);
     if (!user) {
       throw AppError.from(ErrNotFound, 404);
     }
 
-    // Verify old password
+    // Xác minh mật khẩu cũ
     const isMatch = await bcrypt.compare(
       `${dto.oldPassword}.${user.salt}`,
       user.password,
@@ -454,7 +450,7 @@ export class UserService implements IUserService {
       throw AppError.from(ErrInvalidUsernameAndPassword, 400);
     }
 
-    // Check if new password is the same as old password
+    // Kiểm tra mật khẩu mới có giống mật khẩu cũ không
     const isSamePassword = await bcrypt.compare(
       `${dto.newPassword}.${user.salt}`,
       user.password,
@@ -463,11 +459,11 @@ export class UserService implements IUserService {
       throw AppError.from(ErrExistsPassword, 400);
     }
 
-    // Generate new salt and hash for the new password
+    // Tạo salt và hash mới cho mật khẩu mới
     const salt = bcrypt.genSaltSync(10);
     const hashPassword = await bcrypt.hash(`${dto.newPassword}.${salt}`, 12);
 
-    // Update user with new password
+    // Cập nhật người dùng với mật khẩu mới
     await this.userRepo.update(userId, {
       password: hashPassword,
       salt,

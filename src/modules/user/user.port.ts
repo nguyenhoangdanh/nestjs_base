@@ -1,47 +1,14 @@
-import { Requester, TokenPayload, UserRole } from 'src/share';
+import { Requester, UserRole } from 'src/share';
 import {
   ChangePasswordDTO,
   PaginationDTO,
-  RequestPasswordResetDTO,
   UserCondDTO,
-  UserLoginDTO,
-  UserRegistrationDTO,
-  UserResetPasswordDTO,
   UserRoleAssignmentDTO,
   UserUpdateDTO,
 } from './user.dto';
 import { User } from './user.model';
 
-// Thêm interface này nếu chưa có
-export interface ITokenIntrospect {
-  introspect(
-    token: string,
-  ): Promise<{ payload: TokenPayload; error?: Error; isOk: boolean }>;
-}
-
-export interface ITokenService {
-  generateToken(payload: TokenPayload, expiresIn?: string): Promise<string>;
-  generateResetToken(): Promise<string>;
-  verifyToken(token: string): Promise<TokenPayload | null>;
-  decodeToken(token: string): TokenPayload | null;
-  getExpirationTime(token: string): number; // Số giây còn lại trước khi token hết hạn
-  isTokenBlacklisted(token: string): Promise<boolean>;
-  blacklistToken(token: string, expiresIn: number): Promise<void>;
-}
-
-// Interface cho user service
 export interface IUserService {
-  // Authentication
-  register(dto: UserRegistrationDTO): Promise<string>;
-  login(dto: UserLoginDTO): Promise<{
-    token: string;
-    expiresIn: number;
-    requiredResetPassword: boolean;
-  }>;
-  logout(token: string): Promise<void>;
-  introspectToken(token: string): Promise<TokenPayload>;
-  refreshToken(token: string): Promise<{ token: string; expiresIn: number }>;
-
   // Profile management
   profile(userId: string): Promise<Omit<User, 'password' | 'salt'>>;
   update(
@@ -53,10 +20,6 @@ export interface IUserService {
 
   // Password management
   changePassword(userId: string, dto: ChangePasswordDTO): Promise<void>;
-  requestPasswordReset(
-    dto: RequestPasswordResetDTO,
-  ): Promise<{ resetToken: string; expiryDate: Date; username: string }>;
-  resetPassword(dto: UserResetPasswordDTO): Promise<void>;
 
   // Role management
   assignRole(
@@ -72,9 +35,8 @@ export interface IUserService {
   ): Promise<void>;
   getUserRoles(
     userId: string,
-  ): Promise<
-    { roleId: string; role: UserRole; scope?: string; expiryDate?: Date }[]
-  >;
+  ): Promise<{ roleId: string; role: UserRole; scope?: string; expiryDate?: Date }[]>;
+  
   // Access control
   canAccessEntity(
     userId: string,
@@ -95,7 +57,6 @@ export interface IUserService {
   }>;
 }
 
-// Interface cho user repository
 export interface IUserRepository {
   // Query
   get(id: string): Promise<User | null>;
@@ -116,7 +77,6 @@ export interface IUserRepository {
   insert(user: User): Promise<void>;
   update(id: string, dto: Partial<User>): Promise<void>;
   delete(id: string, isHard: boolean): Promise<void>;
-  invalidateToken(token: string): Promise<void>; // Để thêm token đã hết hạn vào blacklist
 
   // Role management
   assignRole(
@@ -130,9 +90,7 @@ export interface IUserRepository {
 
   getUserRoles(
     userId: string,
-  ): Promise<
-    { roleId: string; role: UserRole; scope?: string; expiryDate?: Date }[]
-  >;
+  ): Promise<{ roleId: string; role: UserRole; scope?: string; expiryDate?: Date }[]>;
 
   // Entity access
   isFactoryManager(userId: string, factoryId: string): Promise<boolean>;
@@ -147,4 +105,10 @@ export interface IUserRepository {
     teams: string[];
     groups: string[];
   }>;
+
+  // Methods needed for auth moved to Repository 
+  // to avoid circular dependencies
+  updateLastLogin(userId: string): Promise<void>;
+  setResetToken(userId: string, token: string, expiry: Date): Promise<void>;
+  changePassword(userId: string, hashedPassword: string, salt: string): Promise<void>;
 }

@@ -1,0 +1,200 @@
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL") // for direct connections
+}
+
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "debian-openssl-3.0.x"]
+}
+
+enum BiometricType {
+  FINGERPRINT
+  FACE
+  VOICE
+  OTHER
+}
+
+enum NotificationType {
+  SECURITY
+  ACCOUNT
+  SYSTEM
+  MARKETING
+  SOCIAL
+  CHAT
+}
+
+model User {
+  id       String  @id @default(cuid())
+  name     String?
+  email    String  @unique
+  password String? // Optional để hỗ trợ cả social login
+  image    String? // Avatar
+  isActive Boolean @default(true)
+
+  // Verification
+  isVerified    Boolean   @default(false)
+  verifyCode    String?
+  verifyExpires DateTime?
+
+  // Password reset
+  resetToken        String?
+  resetTokenExpires DateTime?
+
+  // 2FA
+  isTwoFactorEnabled   Boolean  @default(false)
+  twoFactorSecret      String?
+  twoFactorBackupCodes String[]
+
+  // Biometric 
+  biometricData BiometricData[]
+
+  // Sessions
+  sessions Session[]
+
+  // Roles
+  userRoles UserRole[]
+
+  // Devices
+  devices Device[]
+
+  // Notifications
+  notifications        Notification[]
+  notificationSettings NotificationSetting[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Social logins
+  accounts Account[]
+}
+
+// Model Session để quản lý phiên đăng nhập
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  deviceId  String?
+  token     String   @unique
+  expiresAt DateTime
+  isActive  Boolean  @default(true)
+  ipAddress String?
+
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  device Device? @relation(fields: [deviceId], references: [id], onDelete: SetNull)
+
+  createdAt  DateTime @default(now())
+  lastUsedAt DateTime @default(now())
+}
+
+model Role {
+  id          String       @id @default(cuid())
+  name        String       @unique
+  description String?
+  permissions Permission[]
+  users       UserRole[]
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+}
+
+model Permission {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  roles       Role[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model UserRole {
+  id        String   @id @default(cuid())
+  userId    String
+  roleId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role      Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, roleId])
+}
+
+model Device {
+  id          String   @id @default(cuid())
+  userId      String
+  deviceType  String // mobile, desktop, tablet
+  deviceName  String?
+  deviceId    String?
+  browserInfo String?
+  osInfo      String?
+  ipAddress   String?
+  lastActive  DateTime @default(now())
+  isTrusted   Boolean  @default(false)
+
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sessions Session[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model BiometricData {
+  id       String        @id @default(cuid())
+  userId   String
+  type     BiometricType
+  data     String // Encrypted biometric template
+  deviceId String?
+  isActive Boolean       @default(true)
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+//Social Login
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String // oauth, email, etc.
+  provider          String // google, facebook, apple, etc.
+  providerAccountId String
+  refreshToken      String?
+  accessToken       String?
+  expiresAt         Int?
+  tokenType         String?
+  scope             String?
+  idToken           String?
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([provider, providerAccountId])
+}
+
+model Notification {
+  id      String           @id @default(cuid())
+  userId  String
+  title   String
+  content String
+  type    NotificationType
+  isRead  Boolean          @default(false)
+  data    Json? // Extra data
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+}
+
+model NotificationSetting {
+  id               String           @id @default(cuid())
+  userId           String
+  notificationType NotificationType
+  email            Boolean          @default(true)
+  push             Boolean          @default(true)
+  inApp            Boolean          @default(true)
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, notificationType])
+}
