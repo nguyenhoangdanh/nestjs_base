@@ -1,9 +1,12 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { AppError, Paginated, PagingDTO } from 'src/share';
-import { ICrudRepository } from './crud.interface';
+import { AppError, Paginated } from '../../../share';
+import { ICrudRepository, PagingDTO } from '../interfaces/crud.interface';
 
 /**
- * Base Prisma repository implementing common CRUD operations
+ * Lớp Repository cơ sở cho Prisma, triển khai các thao tác CRUD cơ bản
+ * @template T - Entity type
+ * @template C - Create DTO type
+ * @template U - Update DTO type
  */
 @Injectable()
 export abstract class BasePrismaRepository<T, C, U>
@@ -13,6 +16,11 @@ export abstract class BasePrismaRepository<T, C, U>
   protected readonly entityName: string;
   protected readonly prismaModel: any;
 
+  /**
+   * Constructor
+   * @param entityName Tên của entity
+   * @param prismaModel Model Prisma tương ứng
+   */
   constructor(entityName: string, prismaModel: any) {
     this.entityName = entityName;
     this.prismaModel = prismaModel;
@@ -20,19 +28,19 @@ export abstract class BasePrismaRepository<T, C, U>
   }
 
   /**
-   * Convert Prisma model to domain model
-   * This method should be implemented by subclasses
+   * Chuyển đổi từ Prisma model sang domain model
+   * Phương thức này cần được triển khai bởi các lớp con
    */
   protected abstract _toModel(data: any): T;
 
   /**
-   * Convert conditions to Prisma where clause
-   * This method should be implemented by subclasses
+   * Chuyển đổi từ điều kiện tìm kiếm sang Prisma where clause
+   * Phương thức này cần được triển khai bởi các lớp con
    */
   protected abstract _conditionsToWhereClause(conditions: any): any;
 
   /**
-   * Get entity by ID
+   * Lấy entity theo ID
    */
   async get(id: string): Promise<T | null> {
     try {
@@ -54,7 +62,7 @@ export abstract class BasePrismaRepository<T, C, U>
   }
 
   /**
-   * Find entity by custom conditions
+   * Tìm entity theo điều kiện
    */
   async findByCond(conditions: any): Promise<T | null> {
     try {
@@ -79,15 +87,15 @@ export abstract class BasePrismaRepository<T, C, U>
   }
 
   /**
-   * List entities with pagination
+   * Lấy danh sách entity với phân trang
    */
   async list(conditions: any, pagination: PagingDTO): Promise<Paginated<T>> {
     try {
       // Validate pagination parameters
       const page = Math.max(1, pagination.page || 1);
       const limit = Math.min(100, Math.max(1, pagination.limit || 10));
-      const sortBy = pagination.sort || 'createdAt';
-      const sortOrder = pagination.order || 'desc';
+      const sortBy = pagination.sortBy || 'createdAt';
+      const sortOrder = pagination.sortOrder || 'desc';
 
       const whereClause = this._conditionsToWhereClause(conditions);
 
@@ -125,7 +133,7 @@ export abstract class BasePrismaRepository<T, C, U>
   }
 
   /**
-   * Insert new entity
+   * Tạo mới entity
    */
   async insert(entity: any): Promise<string> {
     try {
@@ -151,7 +159,7 @@ export abstract class BasePrismaRepository<T, C, U>
   }
 
   /**
-   * Update existing entity
+   * Cập nhật entity
    */
   async update(id: string, dto: Partial<T>): Promise<void> {
     try {
@@ -180,7 +188,7 @@ export abstract class BasePrismaRepository<T, C, U>
   }
 
   /**
-   * Delete entity
+   * Xóa entity
    */
   async delete(id: string): Promise<void> {
     try {
@@ -200,8 +208,8 @@ export abstract class BasePrismaRepository<T, C, U>
   }
 
   /**
-   * Prepare data for create operation
-   * This method can be overridden by subclasses
+   * Chuẩn bị dữ liệu cho thao tác tạo mới
+   * Phương thức này có thể được override bởi các lớp con
    */
   protected _prepareCreateData(entity: any): any {
     // Add timestamps by default if the model supports them
@@ -219,8 +227,8 @@ export abstract class BasePrismaRepository<T, C, U>
   }
 
   /**
-   * Prepare data for update operation
-   * This method can be overridden by subclasses
+   * Chuẩn bị dữ liệu cho thao tác cập nhật
+   * Phương thức này có thể được override bởi các lớp con
    */
   protected _prepareUpdateData(dto: Partial<T>): any {
     // Filter out undefined values
@@ -233,5 +241,47 @@ export abstract class BasePrismaRepository<T, C, U>
     });
 
     return updateData;
+  }
+
+  /**
+   * Đếm số lượng entity theo điều kiện
+   */
+  async count(conditions: any): Promise<number> {
+    try {
+      const whereClause = this._conditionsToWhereClause(conditions);
+      return await this.prismaModel.count({ where: whereClause });
+    } catch (error) {
+      this.logger.error(
+        `Error counting ${this.entityName}s: ${error.message}`,
+        error.stack,
+      );
+      throw AppError.from(
+        new Error(`Failed to count ${this.entityName}s: ${error.message}`),
+        500,
+      );
+    }
+  }
+
+  /**
+   * Thực hiện transaction
+   */
+  async transaction<R>(callback: (model: any) => Promise<R>): Promise<R> {
+    try {
+      // Sử dụng transaction của Prisma
+      return await this.prismaModel.$transaction(async (tx: any) => {
+        return await callback(tx);
+      });
+    } catch (error) {
+      this.logger.error(
+        `Transaction error for ${this.entityName}: ${error.message}`,
+        error.stack,
+      );
+      throw AppError.from(
+        new Error(
+          `Transaction failed for ${this.entityName}: ${error.message}`,
+        ),
+        500,
+      );
+    }
   }
 }
