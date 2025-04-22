@@ -1,78 +1,105 @@
 import { SetMetadata } from '@nestjs/common';
-import { UserRole } from '../../../share';
+import { CrudControllerOptions } from '../interfaces/crud-options.interface';
 
 /**
- * Metadata key for CRUD roles
+ * Metadata key for CRUD options
  */
-export const CRUD_ROLES_KEY = 'crud:roles';
+export const CRUD_OPTIONS = 'crud:options';
 
 /**
- * Interface định nghĩa vai trò cho từng endpoint
+ * Enum for endpoint types
  */
-export interface EndpointRoles {
-  create?: UserRole[];
-  getAll?: UserRole[];
-  getOne?: UserRole[];
-  update?: UserRole[];
-  delete?: UserRole[];
-  count?: UserRole[];
+export enum CrudEndpointType {
+  GET_ALL = 'getAll',
+  GET_ONE = 'getOne',
+  CREATE = 'create',
+  UPDATE = 'update',
+  DELETE = 'delete',
+  COUNT = 'count',
 }
 
 /**
- * Decorator để cấu hình vai trò cho CRUD controller
- * @param roles Cấu hình vai trò cho từng endpoint
+ * Decorator để cấu hình CRUD controller
+ * @param options Tùy chọn cấu hình
  */
-export function CrudRoles(roles: EndpointRoles) {
-  return SetMetadata(CRUD_ROLES_KEY, roles);
+export function CrudController<T, C, U, F = any>(
+  options: CrudControllerOptions<T, C, U, F>,
+) {
+  return SetMetadata(CRUD_OPTIONS, options);
 }
 
 /**
- * Decorator để cấu hình vai trò cho endpoint cụ thể
- * @param endpoint Tên endpoint
- * @param roles Các vai trò được phép
+ * Decorator để đánh dấu endpoint cụ thể
  */
-export function EndpointRoles(endpoint: string, roles: UserRole[]) {
-  return SetMetadata(`crud:roles:${endpoint}`, roles);
+export function CrudEndpoint(endpoint: CrudEndpointType) {
+  return SetMetadata('crud:endpoint', endpoint);
 }
 
 /**
- * Decorator cấu hình vai trò cho endpoint create
+ * Decorator để tắt một endpoint cụ thể
  */
-export function CreateRoles(...roles: UserRole[]) {
-  return SetMetadata('crud:roles:create', roles);
+export function DisableEndpoint(endpoint: CrudEndpointType) {
+  return (target: any, key: string, descriptor: PropertyDescriptor) => {
+    // Set metadata để đánh dấu endpoint này bị tắt
+    SetMetadata(`crud:disabled:${endpoint}`, true)(target, key, descriptor);
+    return descriptor;
+  };
 }
 
 /**
- * Decorator cấu hình vai trò cho endpoint getAll
+ * Decorator để bật một endpoint cụ thể
  */
-export function GetAllRoles(...roles: UserRole[]) {
-  return SetMetadata('crud:roles:getAll', roles);
+export function EnableEndpoint(endpoint: CrudEndpointType) {
+  return (target: any, key: string, descriptor: PropertyDescriptor) => {
+    // Set metadata để đánh dấu endpoint này được bật
+    SetMetadata(`crud:enabled:${endpoint}`, true)(target, key, descriptor);
+    return descriptor;
+  };
 }
 
 /**
- * Decorator cấu hình vai trò cho endpoint getOne
+ * Decorator để cấu hình cache cho một endpoint
  */
-export function GetOneRoles(...roles: UserRole[]) {
-  return SetMetadata('crud:roles:getOne', roles);
+export function CrudCache(ttl: number = 60) {
+  return (target: any, key: string, descriptor: PropertyDescriptor) => {
+    // Set metadata để cấu hình cache
+    SetMetadata('crud:cache:ttl', ttl)(target, key, descriptor);
+    return descriptor;
+  };
 }
 
 /**
- * Decorator cấu hình vai trò cho endpoint update
+ * Decorator để cấu hình pagination cho endpoint getAll
  */
-export function UpdateRoles(...roles: UserRole[]) {
-  return SetMetadata('crud:roles:update', roles);
+export function CrudPagination(
+  defaultPageSize: number = 10,
+  maxPageSize: number = 100,
+) {
+  return (target: any, key: string, descriptor: PropertyDescriptor) => {
+    // Set metadata để cấu hình pagination
+    SetMetadata('crud:pagination', { defaultPageSize, maxPageSize })(
+      target,
+      key,
+      descriptor,
+    );
+    return descriptor;
+  };
 }
 
 /**
- * Decorator cấu hình vai trò cho endpoint delete
+ * Decorator để cấu hình sorting cho endpoint getAll
  */
-export function DeleteRoles(...roles: UserRole[]) {
-  return SetMetadata('crud:roles:delete', roles);
-}
-
-/**
- * Decorator cấu hình vai trò cho endpoint count
- */
-export function CountRoles(...roles: UserRole[]) {
-  return SetMetadata('crud:roles:count', roles);
+export function CrudSorting(
+  defaultSortBy: string,
+  defaultSortOrder: 'asc' | 'desc' = 'desc',
+) {
+  return (target: any, key: string, descriptor: PropertyDescriptor) => {
+    // Set metadata để cấu hình sorting
+    SetMetadata('crud:sorting', { defaultSortBy, defaultSortOrder })(
+      target,
+      key,
+      descriptor,
+    );
+    return descriptor;
+  };
 }

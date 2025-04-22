@@ -100,7 +100,6 @@ export abstract class BaseCrudService<T, C, U>
         `Error listing ${this.entityName}`,
         error instanceof AppError ? error.getStatusCode() : 400,
       );
-      throw error; // This line is unreachable but needed for TypeScript
     }
   }
 
@@ -139,7 +138,6 @@ export abstract class BaseCrudService<T, C, U>
         `Error creating ${this.entityName}`,
         error instanceof AppError ? error.getStatusCode() : 400,
       );
-      throw error; // This line is unreachable but needed for TypeScript
     }
   }
 
@@ -238,15 +236,29 @@ export abstract class BaseCrudService<T, C, U>
       // Check permissions if needed
       await this.checkPermission(requester, 'read');
 
+      // Apply before count hook if available
+      if (this.options?.hooks?.beforeCount) {
+        conditions = await this.options.hooks.beforeCount(
+          conditions,
+          requester,
+        );
+      }
+
       // Get count from repository
-      return await this.repository.count(conditions);
+      let count = await this.repository.count(conditions);
+
+      // Apply after count hook if available
+      if (this.options?.hooks?.afterCount) {
+        count = await this.options.hooks.afterCount(count, requester);
+      }
+
+      return count;
     } catch (error) {
       this.handleError(
         error,
         `Error counting ${this.entityName}`,
         error instanceof AppError ? error.getStatusCode() : 400,
       );
-      throw error; // This line is unreachable but needed for TypeScript
     }
   }
 

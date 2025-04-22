@@ -50,6 +50,11 @@ export interface ICrudService<T, C, U> {
    * Xóa entity
    */
   deleteEntity(requester: Requester, id: string): Promise<void>;
+
+  /**
+   * Đếm số lượng entity theo điều kiện
+   */
+  countEntities(requester: Requester, conditions: any): Promise<number>;
 }
 
 /**
@@ -88,6 +93,11 @@ export interface ICrudRepository<T, C, U> {
    * Xóa entity
    */
   delete(id: string): Promise<void>;
+
+  /**
+   * Đếm số lượng entity theo điều kiện
+   */
+  count(conditions: any): Promise<number>;
 }
 
 /**
@@ -143,4 +153,14 @@ export interface ICrudHooks<T, C, U> {
     result: Paginated<T>,
     requester: Requester,
   ) => Promise<Paginated<T>>;
+
+  /**
+   * Hook trước khi đếm entity
+   */
+  beforeCount?: (conditions: any, requester: Requester) => Promise<any>;
+
+  /**
+   * Hook sau khi đếm entity
+   */
+  afterCount?: (count: number, requester: Requester) => Promise<number>;
 }

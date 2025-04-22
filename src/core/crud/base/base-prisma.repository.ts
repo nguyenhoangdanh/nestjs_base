@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { AppError, Paginated } from '../../../share';
 import { ICrudRepository, PagingDTO } from '../interfaces/crud.interface';
+import { PrismaClient } from '@prisma/client';
 
 /**
  * Lớp Repository cơ sở cho Prisma, triển khai các thao tác CRUD cơ bản
@@ -20,8 +21,13 @@ export abstract class BasePrismaRepository<T, C, U>
    * Constructor
    * @param entityName Tên của entity
    * @param prismaModel Model Prisma tương ứng
+   * @param prisma Instance của PrismaClient
    */
-  constructor(entityName: string, prismaModel: any) {
+  constructor(
+    entityName: string,
+    prismaModel: any,
+    protected readonly prisma: PrismaClient,
+  ) {
     this.entityName = entityName;
     this.prismaModel = prismaModel;
     this.logger = new Logger(`${entityName}Repository`);
@@ -44,6 +50,13 @@ export abstract class BasePrismaRepository<T, C, U>
    */
   async get(id: string): Promise<T | null> {
     try {
+      if (!id) {
+        this.logger.warn(
+          `Attempted to get ${this.entityName} with null or undefined ID`,
+        );
+        return null;
+      }
+
       const data = await this.prismaModel.findUnique({
         where: { id },
       });
@@ -66,6 +79,13 @@ export abstract class BasePrismaRepository<T, C, U>
    */
   async findByCond(conditions: any): Promise<T | null> {
     try {
+      if (!conditions) {
+        this.logger.warn(
+          `Attempted to find ${this.entityName} with null or undefined conditions`,
+        );
+        return null;
+      }
+
       const whereClause = this._conditionsToWhereClause(conditions);
       const data = await this.prismaModel.findFirst({
         where: whereClause,
@@ -97,7 +117,7 @@ export abstract class BasePrismaRepository<T, C, U>
       const sortBy = pagination.sortBy || 'createdAt';
       const sortOrder = pagination.sortOrder || 'desc';
 
-      const whereClause = this._conditionsToWhereClause(conditions);
+      const whereClause = this._conditionsToWhereClause(conditions || {});
 
       // Run count and data queries in parallel for efficiency
       const [total, data] = await Promise.all([
@@ -137,6 +157,10 @@ export abstract class BasePrismaRepository<T, C, U>
    */
   async insert(entity: any): Promise<string> {
     try {
+      if (!entity) {
+        throw new Error(`Cannot insert empty or null ${this.entityName}`);
+      }
+
       // Prepare data for insertion
       const createData = this._prepareCreateData(entity);
 
@@ -163,6 +187,31 @@ export abstract class BasePrismaRepository<T, C, U>
    */
   async update(id: string, dto: Partial<T>): Promise<void> {
     try {
+      if (!id) {
+        throw new Error(
+          `Cannot update ${this.entityName} with null or undefined ID`,
+        );
+      }
+
+      if (!dto) {
+        throw new Error(
+          `Cannot update ${this.entityName} with null or undefined data`,
+        );
+      }
+
+      // Check if entity exists
+      const exists = await this.prismaModel.findUnique({
+        where: { id },
+        select: { id: true },
+      });
+
+      if (!exists) {
+        throw AppError.from(
+          new Error(`${this.entityName} with ID ${id} not found`),
+          404,
+        );
+      }
+
       // Prepare data for update
       const updateData = this._prepareUpdateData(dto);
 
@@ -176,6 +225,10 @@ export abstract class BasePrismaRepository<T, C, U>
         data: updateData,
       });
     } catch (error) {
+      if (error instanceof AppError) {
+        throw error;
+      }
+
       this.logger.error(
         `Error updating ${this.entityName} ${id}: ${error.message}`,
         error.stack,
@@ -192,16 +245,58 @@ export abstract class BasePrismaRepository<T, C, U>
    */
   async delete(id: string): Promise<void> {
     try {
+      if (!id) {
+        throw new Error(
+          `Cannot delete ${this.entityName} with null or undefined ID`,
+        );
+      }
+
+      // Check if entity exists
+      const exists = await this.prismaModel.findUnique({
+        where: { id },
+        select: { id: true },
+      });
+
+      if (!exists) {
+        throw AppError.from(
+          new Error(`${this.entityName} with ID ${id} not found`),
+          404,
+        );
+      }
+
       await this.prismaModel.delete({
         where: { id },
       });
     } catch (error) {
+      if (error instanceof AppError) {
+        throw error;
+      }
+
       this.logger.error(
         `Error deleting ${this.entityName} ${id}: ${error.message}`,
         error.stack,
       );
       throw AppError.from(
         new Error(`Failed to delete ${this.entityName}: ${error.message}`),
+        500,
+      );
+    }
+  }
+
+  /**
+   * Đếm số lượng entity theo điều kiện
+   */
+  async count(conditions: any): Promise<number> {
+    try {
+      const whereClause = this._conditionsToWhereClause(conditions || {});
+      return await this.prismaModel.count({ where: whereClause });
+    } catch (error) {
+      this.logger.error(
+        `Error counting ${this.entityName}s: ${error.message}`,
+        error.stack,
+      );
+      throw AppError.from(
+        new Error(`Failed to count ${this.entityName}s: ${error.message}`),
         500,
       );
     }
@@ -244,31 +339,12 @@ export abstract class BasePrismaRepository<T, C, U>
   }
 
   /**
-   * Đếm số lượng entity theo điều kiện
-   */
-  async count(conditions: any): Promise<number> {
-    try {
-      const whereClause = this._conditionsToWhereClause(conditions);
-      return await this.prismaModel.count({ where: whereClause });
-    } catch (error) {
-      this.logger.error(
-        `Error counting ${this.entityName}s: ${error.message}`,
-        error.stack,
-      );
-      throw AppError.from(
-        new Error(`Failed to count ${this.entityName}s: ${error.message}`),
-        500,
-      );
-    }
-  }
-
-  /**
    * Thực hiện transaction
    */
-  async transaction<R>(callback: (model: any) => Promise<R>): Promise<R> {
+  async transaction<R>(callback: (prisma: any) => Promise<R>): Promise<R> {
     try {
       // Sử dụng transaction của Prisma
-      return await this.prismaModel.$transaction(async (tx: any) => {
+      return await this.prisma.$transaction(async (tx: any) => {
         return await callback(tx);
       });
     } catch (error) {

@@ -1,35 +1,36 @@
+// Trong zod-validation.pipe.ts
 import {
   PipeTransform,
   Injectable,
   ArgumentMetadata,
   BadRequestException,
 } from '@nestjs/common';
-import { ZodSchema } from 'zod';
+import { ZodType, ZodTypeDef } from 'zod';
 
 @Injectable()
 export class ZodValidationPipe implements PipeTransform {
-  constructor(private schema: ZodSchema) {}
+  constructor(private schema?: ZodType<any, ZodTypeDef, any>) {}
 
   transform(value: any, metadata: ArgumentMetadata) {
-    try {
-      const result = this.schema.parse(value);
-      return result;
-    } catch (error) {
-      const formattedError = this.formatError(error);
-      throw new BadRequestException({
-        message: 'Validation failed',
-        errors: formattedError,
-      });
+    // Nếu không có schema, trả về nguyên giá trị
+    if (!this.schema) {
+      return value;
     }
-  }
 
-  private formatError(error: any) {
-    if (error.errors) {
-      return error.errors.map((err: any) => ({
+    try {
+      return this.schema.parse(value);
+    } catch (error) {
+      const formattedErrors = error.errors?.map((err: any) => ({
         field: err.path.join('.'),
         message: err.message,
-      }));
+      })) || [
+        { field: 'unknown', message: error.message || 'Validation error' },
+      ];
+
+      throw new BadRequestException({
+        message: 'Validation failed',
+        errors: formattedErrors,
+      });
     }
-    return [{ message: error.message }];
   }
 }

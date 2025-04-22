@@ -8,28 +8,20 @@ import {
   Patch,
   Post,
   Query,
-  Inject,
-  Type,
-  Logger,
   Request,
-  Controller,
   UseGuards,
 } from '@nestjs/common';
-import {
-  ApiOperation,
-  ApiParam,
-  ApiQuery,
-  ApiResponse,
-  ApiTags,
-} from '@nestjs/swagger';
 import { AppError, ReqWithRequester } from '../../../share';
 import { ICrudService, PagingDTO } from '../interfaces/crud.interface';
-import { CRUD_OPTIONS } from '../decorators/crud-endpoint.decorator';
-import { CrudControllerOptions } from '../interfaces/crud-options.interface';
+import {
+  CrudControllerOptions,
+  CrudEndpointType,
+} from '../interfaces/crud-options.interface';
 import { RemoteAuthGuard } from '../../../share/guard';
 import { ZodValidationPipe } from '../../../share/pipes/zod-validation.pipe';
 import { UuidZodValidationPipe } from '../../../share/pipes/uuid-validation.pipe';
 import { CrudRolesGuard } from '../guards/crud-roles.guard';
+import { CrudValidationPipe } from '../pipes/crud-validation.pipe';
 
 /**
  * Controller cơ sở với các thao tác CRUD
@@ -39,14 +31,15 @@ import { CrudRolesGuard } from '../guards/crud-roles.guard';
  * @template F - Filter DTO type
  */
 export abstract class BaseCrudController<T, C, U, F> {
-  protected readonly logger: Logger;
-
+  /**
+   * Constructor
+   * @param service CRUD service
+   * @param options Controller options
+   */
   constructor(
     protected readonly service: ICrudService<T, C, U>,
     protected readonly options: CrudControllerOptions<T, C, U, F>,
-  ) {
-    this.logger = new Logger(this.constructor.name);
-  }
+  ) {}
 
   /**
    * Tạo mới entity
@@ -54,13 +47,8 @@ export abstract class BaseCrudController<T, C, U, F> {
   @Post()
   @UseGuards(RemoteAuthGuard, CrudRolesGuard)
   @HttpCode(HttpStatus.CREATED)
-  @ApiOperation({ summary: 'Create new entity' })
-  @ApiResponse({
-    status: HttpStatus.CREATED,
-    description: 'Entity created successfully',
-  })
   async create(
-    @Body(new ZodValidationPipe(null)) dto: C,
+    @Body(new CrudValidationPipe()) dto: C,
     @Request() req: ReqWithRequester,
   ) {
     if (!this.isEndpointEnabled('create')) {
@@ -74,7 +62,6 @@ export abstract class BaseCrudController<T, C, U, F> {
         data: { id },
       };
     } catch (error) {
-      this.logger.error(`Error creating entity: ${error.message}`, error.stack);
       if (error instanceof AppError) {
         throw error;
       }
@@ -88,28 +75,6 @@ export abstract class BaseCrudController<T, C, U, F> {
   @Get()
   @UseGuards(RemoteAuthGuard, CrudRolesGuard)
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'List entities' })
-  @ApiQuery({
-    name: 'page',
-    required: false,
-    description: 'Page number (starts from 1)',
-  })
-  @ApiQuery({
-    name: 'limit',
-    required: false,
-    description: 'Number of items per page',
-  })
-  @ApiQuery({
-    name: 'sortBy',
-    required: false,
-    description: 'Field to sort by',
-  })
-  @ApiQuery({
-    name: 'sortOrder',
-    required: false,
-    description: 'Sort order (asc or desc)',
-  })
-  @ApiResponse({ status: HttpStatus.OK, description: 'List of entities' })
   async list(
     @Query() filter: F,
     @Query('page') page = 1,
@@ -150,10 +115,6 @@ export abstract class BaseCrudController<T, C, U, F> {
         filter,
       };
     } catch (error) {
-      this.logger.error(
-        `Error listing entities: ${error.message}`,
-        error.stack,
-      );
       if (error instanceof AppError) {
         throw error;
       }
@@ -167,13 +128,6 @@ export abstract class BaseCrudController<T, C, U, F> {
   @Get(':id')
   @UseGuards(RemoteAuthGuard, CrudRolesGuard)
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Get entity by ID' })
-  @ApiParam({ name: 'id', description: 'Entity ID' })
-  @ApiResponse({ status: HttpStatus.OK, description: 'Entity found' })
-  @ApiResponse({
-    status: HttpStatus.NOT_FOUND,
-    description: 'Entity not found',
-  })
   async getById(
     @Param('id', UuidZodValidationPipe) id: string,
     @Request() req: ReqWithRequester,
@@ -186,7 +140,6 @@ export abstract class BaseCrudController<T, C, U, F> {
       const entity = await this.service.getEntity(id);
       return { success: true, data: entity };
     } catch (error) {
-      this.logger.error(`Error getting entity: ${error.message}`, error.stack);
       if (error instanceof AppError) {
         throw error;
       }
@@ -200,19 +153,9 @@ export abstract class BaseCrudController<T, C, U, F> {
   @Patch(':id')
   @UseGuards(RemoteAuthGuard, CrudRolesGuard)
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Update entity' })
-  @ApiParam({ name: 'id', description: 'Entity ID' })
-  @ApiResponse({
-    status: HttpStatus.OK,
-    description: 'Entity updated successfully',
-  })
-  @ApiResponse({
-    status: HttpStatus.NOT_FOUND,
-    description: 'Entity not found',
-  })
   async update(
     @Param('id', UuidZodValidationPipe) id: string,
-    @Body(new ZodValidationPipe(null)) dto: U,
+    @Body(new CrudValidationPipe()) dto: U,
     @Request() req: ReqWithRequester,
   ) {
     if (!this.isEndpointEnabled('update')) {
@@ -221,9 +164,11 @@ export abstract class BaseCrudController<T, C, U, F> {
 
     try {
       await this.service.updateEntity(req.requester, id, dto);
-      return { success: true };
+      return {
+        success: true,
+        message: `${this.options.entityName} updated successfully`,
+      };
     } catch (error) {
-      this.logger.error(`Error updating entity: ${error.message}`, error.stack);
       if (error instanceof AppError) {
         throw error;
       }
@@ -237,16 +182,6 @@ export abstract class BaseCrudController<T, C, U, F> {
   @Delete(':id')
   @UseGuards(RemoteAuthGuard, CrudRolesGuard)
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Delete entity' })
-  @ApiParam({ name: 'id', description: 'Entity ID' })
-  @ApiResponse({
-    status: HttpStatus.OK,
-    description: 'Entity deleted successfully',
-  })
-  @ApiResponse({
-    status: HttpStatus.NOT_FOUND,
-    description: 'Entity not found',
-  })
   async delete(
     @Param('id', UuidZodValidationPipe) id: string,
     @Request() req: ReqWithRequester,
@@ -257,9 +192,11 @@ export abstract class BaseCrudController<T, C, U, F> {
 
     try {
       await this.service.deleteEntity(req.requester, id);
-      return { success: true };
+      return {
+        success: true,
+        message: `${this.options.entityName} deleted successfully`,
+      };
     } catch (error) {
-      this.logger.error(`Error deleting entity: ${error.message}`, error.stack);
       if (error instanceof AppError) {
         throw error;
       }
@@ -273,8 +210,6 @@ export abstract class BaseCrudController<T, C, U, F> {
   @Get('count')
   @UseGuards(RemoteAuthGuard, CrudRolesGuard)
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Count entities' })
-  @ApiResponse({ status: HttpStatus.OK, description: 'Count of entities' })
   async count(@Query() filter: F, @Request() req: ReqWithRequester) {
     if (!this.isEndpointEnabled('count')) {
       throw AppError.from(new Error('Endpoint not available'), 404);
@@ -284,10 +219,6 @@ export abstract class BaseCrudController<T, C, U, F> {
       const count = await this.service.countEntities(req.requester, filter);
       return { success: true, data: { count } };
     } catch (error) {
-      this.logger.error(
-        `Error counting entities: ${error.message}`,
-        error.stack,
-      );
       if (error instanceof AppError) {
         throw error;
       }
@@ -300,34 +231,24 @@ export abstract class BaseCrudController<T, C, U, F> {
    */
   protected isEndpointEnabled(endpoint: string): boolean {
     if (!this.options?.endpoints) {
-      return true; // Mặc định là bật nếu không có cấu hình
+      return true;
     }
 
-    const endpointConfig = this.options.endpoints[endpoint];
-    return endpointConfig?.enabled !== false; // Mặc định là bật trừ khi cấu hình tắt
-  }
-}
-
-/**
- * Factory function để tạo controller
- */
-export function createCrudController<T, C, U, F = any>(options: {
-  service: string | symbol;
-  controllerOptions: CrudControllerOptions<T, C, U, F>;
-}): Type<BaseCrudController<T, C, U, F>> {
-  const { service, controllerOptions } = options;
-
-  @Controller() // Adding empty Controller decorator here
-  @UseGuards(RemoteAuthGuard) // Add this line to apply the guard
-  @ApiTags(controllerOptions.swagger?.tags || [controllerOptions.entityName])
-  class CrudControllerHost extends BaseCrudController<T, C, U, F> {
-    constructor(
-      @Inject(service) crudService: ICrudService<T, C, U>,
-      @Inject(CRUD_OPTIONS) options: CrudControllerOptions<T, C, U, F>,
-    ) {
-      super(crudService, options);
+    // Use type assertion with safety check
+    const validEndpoints = [
+      'getAll',
+      'getOne',
+      'create',
+      'update',
+      'delete',
+      'count',
+    ];
+    if (validEndpoints.includes(endpoint)) {
+      const endpointConfig =
+        this.options.endpoints[endpoint as CrudEndpointType];
+      return endpointConfig?.enabled !== false;
     }
-  }
 
-  return CrudControllerHost;
+    return true;
+  }
 }

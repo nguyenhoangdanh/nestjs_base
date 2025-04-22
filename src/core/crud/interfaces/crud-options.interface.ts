@@ -4,6 +4,13 @@ import { ICrudHooks } from './crud.interface';
 /**
  * Interface định nghĩa các tùy chọn cấu hình CRUD endpoint
  */
+export type CrudEndpointType =
+  | 'getAll'
+  | 'getOne'
+  | 'create'
+  | 'update'
+  | 'delete'
+  | 'count';
 export interface CrudEndpointOptions {
   /** Bật/tắt endpoint này */
   enabled?: boolean;
@@ -36,12 +43,7 @@ export interface CrudControllerOptions<T = any, C = any, U = any, F = any> {
 
   /** Cấu hình các endpoint */
   endpoints?: {
-    getAll?: CrudEndpointOptions;
-    getOne?: CrudEndpointOptions;
-    create?: CrudEndpointOptions;
-    update?: CrudEndpointOptions;
-    delete?: CrudEndpointOptions;
-    count?: CrudEndpointOptions;
+    [key in CrudEndpointType]?: CrudEndpointOptions;
   };
 
   /** Swagger tags */
