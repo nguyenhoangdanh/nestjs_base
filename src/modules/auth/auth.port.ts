@@ -1,38 +1,78 @@
-import { TokenPayload } from 'src/share';
+// src/modules/auth/auth.port.ts
 import {
-  ChangePasswordDTO,
-  LoginDTO,
-  RegistrationDTO,
-  RequestPasswordResetDTO,
-  ResetPasswordDTO,
+  LoginDto,
+  RegisterDto,
+  SocialLoginDto,
+  TwoFactorLoginDto,
+  PasswordResetRequestDto,
+  PasswordResetConfirmDto,
+  ChangePasswordDto,
+  RefreshTokenDto,
 } from './auth.dto';
-
-export interface ITokenService {
-  generateToken(payload: TokenPayload, expiresIn?: string): Promise<string>;
-  generateResetToken(): Promise<string>;
-  verifyToken(token: string): Promise<TokenPayload | null>;
-  decodeToken(token: string): TokenPayload | null;
-  getExpirationTime(token: string): number; // Seconds until token expiration
-  isTokenBlacklisted(token: string): Promise<boolean>;
-  blacklistToken(token: string, expiresIn: number): Promise<void>;
-}
+import { TokenPayload, UserRole } from './auth.types';
 
 export interface IAuthService {
-  // Authentication
-  register(dto: RegistrationDTO): Promise<string>;
-  login(dto: LoginDTO): Promise<{
-    token: string;
-    expiresIn: number;
-    requiredResetPassword: boolean;
-  }>;
-  logout(token: string): Promise<void>;
-  introspectToken(token: string): Promise<TokenPayload>;
-  refreshToken(token: string): Promise<{ token: string; expiresIn: number }>;
+  // Login methods
+  login(dto: LoginDto): Promise<AuthResult>;
+  loginWith2FA(dto: TwoFactorLoginDto): Promise<AuthResult>;
+  socialLogin(dto: SocialLoginDto): Promise<AuthResult>;
+
+  // Registration
+  register(dto: RegisterDto): Promise<{ userId: string }>;
 
   // Password management
-  changePassword(userId: string, dto: ChangePasswordDTO): Promise<void>;
-  requestPasswordReset(
-    dto: RequestPasswordResetDTO,
-  ): Promise<{ resetToken: string; expiryDate: Date; username: string }>;
-  resetPassword(dto: ResetPasswordDTO): Promise<void>;
+  requestPasswordReset(dto: PasswordResetRequestDto): Promise<void>;
+  resetPassword(dto: PasswordResetConfirmDto): Promise<void>;
+  changePassword(userId: string, dto: ChangePasswordDto): Promise<void>;
+
+  // Email verification
+  sendVerificationEmail(userId: string): Promise<void>;
+  verifyEmail(token: string): Promise<boolean>;
+
+  // Token management
+  refreshToken(dto: RefreshTokenDto): Promise<AuthResult>;
+  validateToken(token: string): Promise<TokenPayload | null>;
+  revokeToken(token: string): Promise<void>;
+
+  // Session management
+  revokeAllUserSessions(userId: string): Promise<void>;
+  getActiveSessions(userId: string): Promise<Session[]>;
+
+  // Role management
+  assignRole(userId: string, role: UserRole): Promise<void>;
+  removeRole(userId: string, role: UserRole): Promise<void>;
+}
+
+export interface ITokenService {
+  generateTokens(
+    payload: TokenPayload,
+  ): Promise<{ accessToken: string; refreshToken: string }>;
+  verifyAccessToken(token: string): Promise<TokenPayload | null>;
+  verifyRefreshToken(token: string): Promise<TokenPayload | null>;
+  revokeToken(token: string): Promise<void>;
+  revokeAllUserTokens(userId: string): Promise<void>;
+}
+
+export interface Session {
+  id: string;
+  userId: string;
+  deviceInfo: string;
+  ipAddress: string;
+  lastActive: Date;
+  expiresAt: Date;
+}
+
+export interface AuthResult {
+  accessToken: string;
+  refreshToken: string;
+  expiresIn: number;
+  user: {
+    id: string;
+    name: string | null;
+    email: string;
+    isVerified: boolean;
+    isTwoFactorEnabled: boolean;
+    role: UserRole;
+  };
+  requiresTwoFactor?: boolean;
 }

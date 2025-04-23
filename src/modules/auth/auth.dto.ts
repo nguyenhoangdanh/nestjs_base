@@ -1,126 +1,102 @@
+// src/modules/auth/auth.dto.ts
 import { z } from 'zod';
-import { UserRole } from 'src/share';
-import { authSchema } from './auth.model';
+import { AuthProvider } from './auth.types';
 
-// DTO cho đăng ký người dùng
-export const registrationDTOSchema = authSchema
-  .pick({
-    username: true,
-    password: true,
-    fullName: true,
-    employeeId: true,
-    cardId: true,
-    factoryId: true,
-    lineId: true,
-    teamId: true,
-    groupId: true,
-    positionId: true,
-    email: true,
-    phone: true,
-    roleId: true,
-    status: true,
-  })
-  .partial({
-    factoryId: true,
-    lineId: true,
-    teamId: true,
-    groupId: true,
-    positionId: true,
-    email: true,
-    phone: true,
-  })
-  .extend({
-    defaultRoleCode: z.nativeEnum(UserRole).default(UserRole.WORKER),
-  })
-  .required({
-    username: true,
-    password: true,
-    fullName: true,
-    employeeId: true,
-    cardId: true,
-  });
-
-// DTO cho đăng nhập
-export const loginDTOSchema = z.object({
-  username: z.string().min(1, 'Tên đăng nhập không được để trống'),
-  password: z.string().min(1, 'Mật khẩu không được để trống'),
+// Login DTO
+export const loginDtoSchema = z.object({
+  email: z.string().email('Invalid email format'),
+  password: z.string().min(6, 'Password must be at least 6 characters'),
   rememberMe: z.boolean().optional().default(false),
 });
 
-export type RegistrationDTO = z.infer<typeof registrationDTOSchema>;
-export type LoginDTO = z.infer<typeof loginDTOSchema>;
+export type LoginDto = z.infer<typeof loginDtoSchema>;
 
-// DTO cho đặt lại mật khẩu
-export const resetPasswordDTOSchema = z
+// Registration DTO
+export const registerDtoSchema = z
   .object({
-    username: z.string().optional(),
-    cardId: z.string().optional(),
-    employeeId: z.string().optional(),
-    resetToken: z.string().optional(),
-    password: z.string().min(6, 'Mật khẩu mới phải có ít nhất 6 ký tự'),
+    name: z.string().min(2, 'Name must be at least 2 characters'),
+    email: z.string().email('Invalid email format'),
+    password: z.string().min(6, 'Password must be at least 6 characters'),
     confirmPassword: z
       .string()
-      .min(6, 'Xác nhận mật khẩu phải có ít nhất 6 ký tự'),
+      .min(6, 'Confirm password must be at least 6 characters'),
   })
   .refine((data) => data.password === data.confirmPassword, {
-    message: 'Mật khẩu xác nhận không khớp với mật khẩu mới',
-    path: ['confirmPassword'],
-  })
-  .refine(
-    (data) =>
-      (data.username && !data.cardId && !data.employeeId) ||
-      (!data.username && data.cardId && data.employeeId),
-    {
-      message: 'Vui lòng cung cấp username hoặc cả cardId và employeeId',
-      path: ['username'],
-    },
-  );
-
-export type ResetPasswordDTO = z.infer<typeof resetPasswordDTOSchema>;
-
-// DTO cho yêu cầu đặt lại mật khẩu
-export const requestPasswordResetDTOSchema = z
-  .object({
-    username: z.string().optional(),
-    cardId: z.string().optional(),
-    employeeId: z.string().optional(),
-  })
-  .refine(
-    (data) =>
-      (data.username && !data.cardId && !data.employeeId) ||
-      (!data.username && data.cardId && data.employeeId),
-    {
-      message: 'Vui lòng cung cấp username hoặc cả cardId và employeeId',
-      path: ['username'],
-    },
-  );
-
-export type RequestPasswordResetDTO = z.infer<
-  typeof requestPasswordResetDTOSchema
->;
-
-// DTO cho tạo mật khẩu mới
-export const changePasswordDTOSchema = z
-  .object({
-    oldPassword: z.string().min(1, 'Mật khẩu hiện tại không được để trống'),
-    newPassword: z.string().min(6, 'Mật khẩu mới phải có ít nhất 6 ký tự'),
-    confirmPassword: z
-      .string()
-      .min(6, 'Xác nhận mật khẩu phải có ít nhất 6 ký tự'),
-  })
-  .refine((data) => data.newPassword === data.confirmPassword, {
-    message: 'Mật khẩu xác nhận không khớp với mật khẩu mới',
+    message: "Passwords don't match",
     path: ['confirmPassword'],
   });
 
-export type ChangePasswordDTO = z.infer<typeof changePasswordDTOSchema>;
+export type RegisterDto = z.infer<typeof registerDtoSchema>;
 
-// DTO cho phân trang và sắp xếp
-export const paginationDTOSchema = z.object({
-  page: z.number().int().positive().default(1),
-  limit: z.number().int().positive().max(100).default(10),
-  sortBy: z.string().optional().default('createdAt'),
-  sortOrder: z.enum(['asc', 'desc']).optional().default('desc'),
+// Social Login DTO
+export const socialLoginDtoSchema = z.object({
+  provider: z.nativeEnum(AuthProvider),
+  token: z.string(),
 });
 
-export type PaginationDTO = z.infer<typeof paginationDTOSchema>;
+export type SocialLoginDto = z.infer<typeof socialLoginDtoSchema>;
+
+// 2FA login DTO
+export const twoFactorLoginDtoSchema = z.object({
+  email: z.string().email('Invalid email format'),
+  password: z.string().min(6, 'Password must be at least 6 characters'),
+  twoFactorCode: z
+    .string()
+    .min(6, 'Two factor code must be at least 6 characters'),
+});
+
+export type TwoFactorLoginDto = z.infer<typeof twoFactorLoginDtoSchema>;
+
+// Password reset request DTO
+export const passwordResetRequestDtoSchema = z.object({
+  email: z.string().email('Invalid email format'),
+});
+
+export type PasswordResetRequestDto = z.infer<
+  typeof passwordResetRequestDtoSchema
+>;
+
+// Password reset confirmation DTO
+export const passwordResetConfirmDtoSchema = z
+  .object({
+    token: z.string(),
+    password: z.string().min(6, 'Password must be at least 6 characters'),
+    confirmPassword: z
+      .string()
+      .min(6, 'Confirm password must be at least 6 characters'),
+  })
+  .refine((data) => data.password === data.confirmPassword, {
+    message: "Passwords don't match",
+    path: ['confirmPassword'],
+  });
+
+export type PasswordResetConfirmDto = z.infer<
+  typeof passwordResetConfirmDtoSchema
+>;
+
+// Change password DTO
+export const changePasswordDtoSchema = z
+  .object({
+    currentPassword: z
+      .string()
+      .min(6, 'Current password must be at least 6 characters'),
+    newPassword: z
+      .string()
+      .min(6, 'New password must be at least 6 characters'),
+    confirmPassword: z
+      .string()
+      .min(6, 'Confirm password must be at least 6 characters'),
+  })
+  .refine((data) => data.newPassword === data.confirmPassword, {
+    message: "Passwords don't match",
+    path: ['confirmPassword'],
+  });
+
+export type ChangePasswordDto = z.infer<typeof changePasswordDtoSchema>;
+
+// Refresh token DTO
+export const refreshTokenDtoSchema = z.object({
+  refreshToken: z.string(),
+});
+
+export type RefreshTokenDto = z.infer<typeof refreshTokenDtoSchema>;

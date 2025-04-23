@@ -1,114 +1,87 @@
-import { Requester, UserRole } from 'src/share';
 import {
-  ChangePasswordDTO,
-  PaginationDTO,
-  UserCondDTO,
-  UserRoleAssignmentDTO,
-  UserUpdateDTO,
+  PaginationDto,
+  UserFilterDto,
+  CreateUserDto,
+  UpdateUserDto,
 } from './user.dto';
 import { User } from './user.model';
-
-export interface IUserService {
-  // Profile management
-  profile(userId: string): Promise<Omit<User, 'password' | 'salt'>>;
-  update(
-    requester: Requester,
-    userId: string,
-    dto: UserUpdateDTO,
-  ): Promise<void>;
-  delete(requester: Requester, userId: string): Promise<void>;
-
-  // Password management
-  changePassword(userId: string, dto: ChangePasswordDTO): Promise<void>;
-
-  // Role management
-  assignRole(
-    requester: Requester,
-    userId: string,
-    dto: UserRoleAssignmentDTO,
-  ): Promise<void>;
-  removeRole(
-    requester: Requester,
-    userId: string,
-    roleId: string,
-    scope?: string,
-  ): Promise<void>;
-  getUserRoles(
-    userId: string,
-  ): Promise<{ roleId: string; role: UserRole; scope?: string; expiryDate?: Date }[]>;
-  
-  // Access control
-  canAccessEntity(
-    userId: string,
-    entityType: string,
-    entityId: string,
-  ): Promise<boolean>;
-
-  // User management
-  listUsers(
-    requester: Requester,
-    conditions: UserCondDTO,
-    pagination: PaginationDTO,
-  ): Promise<{
-    data: Array<Omit<User, 'password' | 'salt'>>;
-    total: number;
-    page: number;
-    limit: number;
-  }>;
-}
+import { Paginated, Requester, UserRole } from '../../share';
 
 export interface IUserRepository {
-  // Query
+  // Query methods
   get(id: string): Promise<User | null>;
-  findByCond(cond: UserCondDTO): Promise<User | null>;
-  findByCardId(cardId: string, employeeId: string): Promise<User | null>;
-  findByUsername(username: string): Promise<User | null>;
+  findByEmail(email: string): Promise<User | null>;
   findByResetToken(token: string): Promise<User | null>;
-  listByIds(ids: string[]): Promise<User[]>;
+  findByVerifyCode(code: string): Promise<User | null>;
   list(
-    conditions: UserCondDTO,
-    pagination: PaginationDTO,
-  ): Promise<{
-    data: User[];
-    total: number;
-  }>;
+    filter: UserFilterDto,
+    pagination: PaginationDto,
+  ): Promise<Paginated<User>>;
 
-  // Command
-  insert(user: User): Promise<void>;
-  update(id: string, dto: Partial<User>): Promise<void>;
-  delete(id: string, isHard: boolean): Promise<void>;
+  // Command methods
+  insert(user: User): Promise<string>;
+  update(id: string, data: Partial<User>): Promise<void>;
+  delete(id: string, hardDelete?: boolean): Promise<void>;
 
-  // Role management
-  assignRole(
-    userId: string,
-    roleId: string,
-    scope?: string,
-    expiryDate?: Date,
-  ): Promise<void>;
-
-  removeRole(userId: string, roleId: string, scope?: string): Promise<void>;
-
-  getUserRoles(
-    userId: string,
-  ): Promise<{ roleId: string; role: UserRole; scope?: string; expiryDate?: Date }[]>;
-
-  // Entity access
-  isFactoryManager(userId: string, factoryId: string): Promise<boolean>;
-  isLineManager(userId: string, lineId: string): Promise<boolean>;
-  isTeamLeader(userId: string, teamId: string): Promise<boolean>;
-  isGroupLeader(userId: string, groupId: string): Promise<boolean>;
-
-  // Hierarchical access check
-  getManagerialAccess(userId: string): Promise<{
-    factories: string[];
-    lines: string[];
-    teams: string[];
-    groups: string[];
-  }>;
-
-  // Methods needed for auth moved to Repository 
-  // to avoid circular dependencies
-  updateLastLogin(userId: string): Promise<void>;
+  // Auth related methods
   setResetToken(userId: string, token: string, expiry: Date): Promise<void>;
-  changePassword(userId: string, hashedPassword: string, salt: string): Promise<void>;
+  setVerifyCode(userId: string, code: string, expiry: Date): Promise<void>;
+  updatePassword(userId: string, hashedPassword: string): Promise<void>;
+  verify(userId: string): Promise<void>;
+  updateLastLogin(userId: string): Promise<void>;
+
+  // 2FA methods
+  set2FASecret(userId: string, secret: string): Promise<void>;
+  set2FABackupCodes(userId: string, codes: string[]): Promise<void>;
+  enable2FA(userId: string, enabled: boolean): Promise<void>;
+
+  // Role methods
+  getUserRoles(userId: string): Promise<{ roleId: string; role: UserRole }[]>;
+}
+
+export interface IUserService {
+  // Basic CRUD
+  createUser(dto: CreateUserDto): Promise<string>;
+  getUser(id: string): Promise<User>;
+  updateUser(
+    requester: Requester,
+    id: string,
+    dto: UpdateUserDto,
+  ): Promise<void>;
+  deleteUser(
+    requester: Requester,
+    id: string,
+    hardDelete?: boolean,
+  ): Promise<void>;
+  listUsers(
+    requester: Requester,
+    filter: UserFilterDto,
+    pagination: PaginationDto,
+  ): Promise<Paginated<User>>;
+
+  // User profile
+  getUserProfile(userId: string): Promise<User>;
+
+  // Email verification
+  generateVerifyCode(userId: string): Promise<string>;
+  verifyEmail(code: string): Promise<boolean>;
+
+  // Password management
+  updatePassword(userId: string, newPassword: string): Promise<void>;
+
+  // 2FA
+  setup2FA(userId: string): Promise<{ secret: string; qrCodeUrl: string }>;
+  verify2FA(userId: string, token: string): Promise<boolean>;
+  enable2FA(userId: string, enabled: boolean): Promise<void>;
+  generate2FABackupCodes(userId: string): Promise<string[]>;
+
+  // Roles
+  getUserRoles(userId: string): Promise<{ roleId: string; role: UserRole }[]>;
+
+  // Access control
+  canAccessResource(
+    userId: string,
+    resourceType: string,
+    resourceId: string,
+  ): Promise<boolean>;
 }
