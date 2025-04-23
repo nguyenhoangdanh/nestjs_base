@@ -18,7 +18,6 @@ import {
   CrudEndpointType,
 } from '../interfaces/crud-options.interface';
 import { RemoteAuthGuard } from '../../../share/guard';
-import { ZodValidationPipe } from '../../../share/pipes/zod-validation.pipe';
 import { UuidZodValidationPipe } from '../../../share/pipes/uuid-validation.pipe';
 import { CrudRolesGuard } from '../guards/crud-roles.guard';
 import { CrudValidationPipe } from '../pipes/crud-validation.pipe';
@@ -130,7 +129,7 @@ export abstract class BaseCrudController<T, C, U, F> {
   @HttpCode(HttpStatus.OK)
   async getById(
     @Param('id', UuidZodValidationPipe) id: string,
-    @Request() req: ReqWithRequester,
+    // @Request() req: ReqWithRequester,
   ) {
     if (!this.isEndpointEnabled('getOne')) {
       throw AppError.from(new Error('Endpoint not available'), 404);

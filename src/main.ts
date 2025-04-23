@@ -9,10 +9,10 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
   const app = await NestFactory.create(AppModule);
-  
+
   // Sử dụng middleware
   app.use(cookieParser());
-  
+
   // CORS configuration
   app.enableCors({
     origin: [
@@ -30,13 +30,13 @@ async function bootstrap() {
     exposedHeaders: ['Authorization'],
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH', 'HEAD'],
   });
-  
+
   // API prefix
   app.setGlobalPrefix('api/v1');
-  
+
   // Global filters
   app.useGlobalFilters(new ZodExceptionFilter());
-  
+
   // Cấu hình Swagger
   const config = new DocumentBuilder()
     .setTitle('Bento NestJS API')
@@ -58,29 +58,20 @@ async function bootstrap() {
       'JWT-auth', // This name here is important for matching up with @ApiBearerAuth() in the controller!
     )
     .build();
-    
+
   const document = SwaggerModule.createDocument(app, config);
   SwaggerModule.setup('api-docs', app, document);
-  
+
   // Start server
   const port = process.env.PORT || 3000;
   await app.listen(port);
   logger.log(`Application is running on: http://localhost:${port}`);
-  logger.log(`API documentation available at: http://localhost:${port}/api-docs`);
+  logger.log(
+    `API documentation available at: http://localhost:${port}/api-docs`,
+  );
 }
 
 bootstrap();
-
-
-
-
-
-
-
-
-
-
-
 
 // import { NestFactory } from '@nestjs/core';
 // import { AppModule } from './app.module';

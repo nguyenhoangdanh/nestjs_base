@@ -21,18 +21,23 @@ export class NotificationService {
   }
 
   private async subscribeToNotificationEvents() {
-    await this.redisPublisher.subscribe('app:notifications', async (message) => {
-      try {
-        const data = JSON.parse(message);
-        if (data.event === 'notification:created') {
-          // Process notification event
-          const notification = data.notification;
-          await this.processNotification(notification);
+    await this.redisPublisher.subscribe(
+      'app:notifications',
+      async (message) => {
+        try {
+          const data = JSON.parse(message);
+          if (data.event === 'notification:created') {
+            // Process notification event
+            const notification = data.notification;
+            await this.processNotification(notification);
+          }
+        } catch (error) {
+          this.logger.error(
+            `Error processing notification event: ${error.message}`,
+          );
         }
-      } catch (error) {
-        this.logger.error(`Error processing notification event: ${error.message}`);
-      }
-    });
+      },
+    );
   }
 
   async getUserNotifications(userId: string, page = 1, limit = 10) {
@@ -107,7 +112,9 @@ export class NotificationService {
       });
       return { success: true };
     } catch (error) {
-      this.logger.error(`Error marking all notifications as read: ${error.message}`);
+      this.logger.error(
+        `Error marking all notifications as read: ${error.message}`,
+      );
       throw error;
     }
   }
@@ -133,7 +140,11 @@ export class NotificationService {
       });
 
       // Send real-time notification
-      this.notificationGateway.sendToUser(userId, 'notification:new', notification);
+      this.notificationGateway.sendToUser(
+        userId,
+        'notification:new',
+        notification,
+      );
 
       return notification;
     } catch (error) {
@@ -152,7 +163,9 @@ export class NotificationService {
       });
 
       if (existing) {
-        this.logger.debug(`Notification ${notification.id} already exists, skipping`);
+        this.logger.debug(
+          `Notification ${notification.id} already exists, skipping`,
+        );
         return;
       }
 

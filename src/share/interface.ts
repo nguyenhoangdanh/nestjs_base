@@ -9,6 +9,7 @@ export enum UserRole {
   FACTORY_MANAGER = 'FACTORY_MANAGER',
   ADMIN = 'ADMIN',
   SUPER_ADMIN = 'SUPER_ADMIN',
+  USER = 'USER',
 }
 
 export interface TokenPayload {

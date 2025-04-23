@@ -19,7 +19,9 @@ import { WsJwtGuard } from './guards/ws-jwt.guard';
   },
   namespace: 'notifications',
 })
-export class NotificationGateway implements OnGatewayConnection, OnGatewayDisconnect {
+export class NotificationGateway
+  implements OnGatewayConnection, OnGatewayDisconnect
+{
   @WebSocketServer()
   server: Server;
 
@@ -27,7 +29,7 @@ export class NotificationGateway implements OnGatewayConnection, OnGatewayDiscon
   private userSockets: Map<string, Set<string>> = new Map();
 
   constructor(
-    @Inject(TOKEN_SERVICE) private readonly tokenService: ITokenService
+    @Inject(TOKEN_SERVICE) private readonly tokenService: ITokenService,
   ) {}
 
   async handleConnection(client: Socket) {
@@ -53,7 +55,7 @@ export class NotificationGateway implements OnGatewayConnection, OnGatewayDiscon
 
       // Add to rooms based on organizational structure
       client.join(`user:${userId}`);
-      
+
       if (payload.factoryId) {
         client.join(`factory:${payload.factoryId}`);
       }
@@ -101,7 +103,12 @@ export class NotificationGateway implements OnGatewayConnection, OnGatewayDiscon
   }
 
   // Send notification to all users in an organizational unit
-  sendToOrganizationalUnit(unitType: string, unitId: string, event: string, data: any) {
+  sendToOrganizationalUnit(
+    unitType: string,
+    unitId: string,
+    event: string,
+    data: any,
+  ) {
     this.server.to(`${unitType}:${unitId}`).emit(event, data);
     this.logger.debug(`Sent ${event} to ${unitType} ${unitId}`);
   }
@@ -119,7 +126,7 @@ export class NotificationGateway implements OnGatewayConnection, OnGatewayDiscon
     try {
       // Update business logic for read notification
       this.logger.log(
-        `Notification ${payload.notificationId} marked as read by ${client.data.userId}`
+        `Notification ${payload.notificationId} marked as read by ${client.data.userId}`,
       );
       return { success: true };
     } catch (error) {

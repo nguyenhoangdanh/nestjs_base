@@ -1,6 +1,9 @@
-import { Paginated } from '../../../share';
+import { Paginated, UserRole } from '../../../share';
 import { PagingDTO } from '../interfaces/crud.interface';
-import { CrudControllerOptions } from '../interfaces/crud-options.interface';
+import {
+  CrudControllerOptions,
+  CrudEndpointType,
+} from '../interfaces/crud-options.interface';
 import { Type } from '@nestjs/common';
 import { ZodSchema } from 'zod';
 
@@ -20,12 +23,13 @@ export const paginatedResponse = <E>(paginated: Paginated<E>, filter: any) => ({
 export const normalizePagination = (
   pagination: Partial<PagingDTO>,
 ): PagingDTO => {
+  const sortOrder = pagination.sortOrder?.toLowerCase();
   return {
     page: Math.max(1, pagination.page || 1),
     limit: Math.min(100, Math.max(1, pagination.limit || 10)),
     sortBy: pagination.sortBy || 'createdAt',
-    sortOrder: (['asc', 'desc'].includes(pagination.sortOrder?.toLowerCase())
-      ? pagination.sortOrder?.toLowerCase()
+    sortOrder: (sortOrder && ['asc', 'desc'].includes(sortOrder)
+      ? sortOrder
       : 'desc') as 'asc' | 'desc',
   };
 };
@@ -49,7 +53,7 @@ export const createSwaggerDocs = (
  * Tạo mô tả cho từng endpoint
  */
 export const createEndpointDescription = (
-  endpoint: string,
+  endpoint: CrudEndpointType,
   entityName: string,
   options?: CrudControllerOptions,
 ) => {
@@ -82,7 +86,7 @@ export const createEndpointDescription = (
  * Xác định xem endpoint có được bật không
  */
 export const isEndpointEnabled = (
-  endpoint: string,
+  endpoint: CrudEndpointType,
   options?: CrudControllerOptions,
 ): boolean => {
   if (!options?.endpoints) {
@@ -90,7 +94,8 @@ export const isEndpointEnabled = (
   }
 
   const endpointConfig = options.endpoints[endpoint];
-  return endpointConfig?.enabled !== false; // Mặc định là bật trừ khi cấu hình tắt
+  // Mặc định là bật trừ khi cấu hình tắt
+  return endpointConfig === undefined || endpointConfig.enabled !== false;
 };
 
 /**
@@ -102,12 +107,12 @@ export const createCrudOptionsFromDto = <T, C, U, F = any>(params: {
   updateDtoClass?: Type<U> | ZodSchema;
   filterDtoClass?: Type<F> | ZodSchema;
   roles?: {
-    getAll?: string[];
-    getOne?: string[];
-    create?: string[];
-    update?: string[];
-    delete?: string[];
-    count?: string[];
+    getAll?: UserRole[];
+    getOne?: UserRole[];
+    create?: UserRole[];
+    update?: UserRole[];
+    delete?: UserRole[];
+    count?: UserRole[];
   };
 }): CrudControllerOptions<T, C, U, F> => {
   const { entityName, createDtoClass, updateDtoClass, filterDtoClass, roles } =

@@ -1,33 +1,31 @@
-// src/modules/auth/auth.service.ts
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { Response } from 'express';
-import * as bcrypt from 'bcrypt';
-import { v4 as uuidv4 } from 'uuid';
-import { AppError, ReqWithRequester, TokenPayload } from '../../share';
+import bcrypt from 'bcrypt';
+import { AppError, ErrNotFound, TokenPayload, UserRole } from 'src/share';
+import { v4 } from 'uuid';
 import { USER_REPOSITORY } from '../user/user.di-token';
-import { IUserRepository } from '../user/user.port';
 import {
-  UserLoginDTO,
-  UserRegistrationDTO,
+  ChangePasswordDTO,
+  LoginDTO,
+  RegistrationDTO,
   RequestPasswordResetDTO,
-  UserResetPasswordDTO,
-} from '../user/user.dto';
+  ResetPasswordDTO,
+} from './auth.dto';
 import {
-  User,
-  UserStatus,
-  ErrUsernameExisted,
-  ErrInvalidUsernameAndPassword,
-  ErrUserInactivated,
-  ErrInvalidToken,
   ErrExistsPassword,
-  ErrMissingResetCredentials,
   ErrInvalidResetToken,
-} from '../user/user.model';
-import { TOKEN_SERVICE } from './auth.di-token';
-import { IAuthService, ITokenService } from './auth.interface';
+  ErrInvalidToken,
+  ErrInvalidUsernameAndPassword,
+  ErrMissingResetCredentials,
+  ErrUserInactivated,
+  ErrUsernameExisted,
+  UserStatus,
+} from './auth.model';
+import { IAuthService, ITokenService } from './auth.port';
+import { IUserRepository } from '../user/user.port';
 import { ROLE_SERVICE } from '../role/role.di-token';
 import { IRoleService } from '../role/role.port';
-import { UserRole } from '../../share/interface';
+import { User } from '../user/user.model';
+import { TOKEN_SERVICE } from './auth.di-token';
 
 @Injectable()
 export class AuthService implements IAuthService {
@@ -39,34 +37,34 @@ export class AuthService implements IAuthService {
     @Inject(ROLE_SERVICE) private readonly roleService: IRoleService,
   ) {}
 
-  async register(dto: UserRegistrationDTO): Promise<{ userId: string }> {
+  async register(dto: RegistrationDTO): Promise<string> {
     try {
-      // Kiểm tra username đã tồn tại chưa
+      // Check if username already exists
       const existingUser = await this.userRepo.findByUsername(dto.username);
       if (existingUser) {
         throw AppError.from(ErrUsernameExisted, 400);
       }
 
-      // Tạo salt và hash password
+      // Generate salt and hash password
       const salt = bcrypt.genSaltSync(10);
       const hashPassword = await bcrypt.hash(`${dto.password}.${salt}`, 12);
 
-      // Tạo ID mới
-      const newId = uuidv4();
+      // Generate new user ID
+      const newId = v4();
 
-      // Lấy roleId từ defaultRoleCode
       let defaultRoleId: string;
       if (dto.roleId) {
         const role = await this.roleService.getRole(dto.roleId);
         defaultRoleId = role.id;
       } else {
+        // If no roleId provided, use WORKER role as default
         const defaultRole = await this.roleService.getRoleByCode(
-          dto.defaultRoleCode || UserRole.WORKER,
+          UserRole.WORKER,
         );
         defaultRoleId = defaultRole.id;
       }
 
-      // Tạo user mới
+      // Create new user object
       const newUser: User = {
         ...dto,
         password: hashPassword,
@@ -87,42 +85,45 @@ export class AuthService implements IAuthService {
         positionId: dto.positionId || null,
       };
 
-      // Lưu vào database
+      // Insert new user to repository
       await this.userRepo.insert(newUser);
 
-      this.logger.log(`User registered: ${dto.username} (${newId})`);
-      return { userId: newId };
+      // Log successful user creation
+      this.logger.log(`New user registered: ${dto.username} (${newId})`);
+
+      return newId;
     } catch (error) {
+      // Log error details
       this.logger.error(
-        `Error during registration: ${error.message}`,
+        `Error during user registration: ${error.message}`,
         error.stack,
       );
+
+      // Rethrow error for controller to handle
       if (error instanceof AppError) {
         throw error;
       }
+
       throw AppError.from(
-        new Error(`Lỗi khi đăng ký: ${error.message}`),
+        new Error(`Lỗi khi đăng ký người dùng: ${error.message}`),
         400,
       );
     }
   }
 
-  async login(
-    dto: UserLoginDTO,
-    res: Response,
-  ): Promise<{
+  async login(dto: LoginDTO): Promise<{
     token: string;
     expiresIn: number;
     requiredResetPassword: boolean;
   }> {
     try {
-      // Tìm user theo username
+      // Find user by username
       const user = await this.userRepo.findByUsername(dto.username);
       if (!user) {
         throw AppError.from(ErrInvalidUsernameAndPassword, 400);
       }
 
-      // Kiểm tra trạng thái tài khoản
+      // Check if user account is active
       if (
         user.status !== UserStatus.ACTIVE &&
         user.status !== UserStatus.PENDING_ACTIVATION
@@ -130,7 +131,7 @@ export class AuthService implements IAuthService {
         throw AppError.from(ErrUserInactivated, 400);
       }
 
-      // Xác thực mật khẩu
+      // Verify password
       const isMatch = await bcrypt.compare(
         `${dto.password}.${user.salt}`,
         user.password,
@@ -139,10 +140,10 @@ export class AuthService implements IAuthService {
         throw AppError.from(ErrInvalidUsernameAndPassword, 400);
       }
 
-      // Xác định thời gian hết hạn token
-      const expiresIn = dto.rememberMe ? '7d' : '1d'; // 7 ngày hoặc 1 ngày
+      // Determine token expiration based on "remember me" option
+      const expiresIn = dto.rememberMe ? '7d' : '1d'; // 7 days or 1 day
 
-      // Tạo payload
+      // Create token payload
       const tokenPayload: TokenPayload = {
         sub: user.id,
         roleId: user.roleId,
@@ -153,32 +154,22 @@ export class AuthService implements IAuthService {
         groupId: user.groupId || undefined,
       };
 
-      // Tạo token JWT
+      // Generate JWT token
       const token = await this.tokenService.generateToken(
         tokenPayload,
         expiresIn,
       );
 
-      // Tính thời gian hết hạn token (giây)
+      // Calculate token expiration time in seconds
       const expirationTime = this.tokenService.getExpirationTime(token);
 
-      // Cập nhật lastLogin
+      // Update user's last login timestamp
       await this.userRepo.update(user.id, {
         lastLogin: new Date(),
-        status:
-          user.status === UserStatus.PENDING_ACTIVATION
-            ? UserStatus.PENDING_ACTIVATION
-            : user.status,
+        // If user is in PENDING_ACTIVATION, auto-activate on first login
       });
 
-      // Set HTTP-only cookie với token
-      res.cookie('accessToken', token, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
-        maxAge: expirationTime * 1000, // Convert seconds to milliseconds
-      });
-
+      // Log successful login
       this.logger.log(`User logged in: ${user.username} (${user.id})`);
 
       return {
@@ -187,10 +178,14 @@ export class AuthService implements IAuthService {
         requiredResetPassword: user.status === UserStatus.PENDING_ACTIVATION,
       };
     } catch (error) {
+      // Log error details
       this.logger.error(`Login error: ${error.message}`, error.stack);
+
+      // Rethrow error for controller to handle
       if (error instanceof AppError) {
         throw error;
       }
+
       throw AppError.from(
         new Error(`Lỗi khi đăng nhập: ${error.message}`),
         400,
@@ -198,70 +193,105 @@ export class AuthService implements IAuthService {
     }
   }
 
-  async logout(req: ReqWithRequester, res: Response): Promise<void> {
+  async logout(token: string): Promise<void> {
     try {
-      // Lấy token từ cookie hoặc header
-      const cookieToken = req.cookies?.accessToken;
-      const headerToken = req.headers.authorization?.split(' ')[1];
+      if (!token) {
+        this.logger.warn('Attempted logout with empty token');
+        return;
+      }
 
+      // Add additional debug logging
       this.logger.debug(
-        `Logout - Cookie token exists: ${!!cookieToken}, Auth header exists: ${!!headerToken}`,
+        `Processing logout for token: ${token.substring(0, 10)}...`,
       );
 
-      // Đăng xuất và vô hiệu hóa tất cả các token có sẵn
-      if (cookieToken) {
-        await this.tokenService.blacklistToken(
-          cookieToken,
-          this.tokenService.getExpirationTime(cookieToken),
-        );
+      // Decode token payload first to get user info for logging
+      const payload = this.tokenService.decodeToken(token);
+      const userId = payload?.sub || 'unknown';
+
+      // Check blacklist before to see if token is already blacklisted
+      const isAlreadyBlacklisted =
+        await this.tokenService.isTokenBlacklisted(token);
+      if (isAlreadyBlacklisted) {
+        this.logger.debug(`Token for user ${userId} is already blacklisted`);
+        return;
       }
 
-      if (headerToken && headerToken !== cookieToken) {
-        await this.tokenService.blacklistToken(
-          headerToken,
-          this.tokenService.getExpirationTime(headerToken),
-        );
+      // Get token expiration time
+      const expiresIn = this.tokenService.getExpirationTime(token);
+      this.logger.debug(`Token expires in ${expiresIn} seconds`);
+
+      if (expiresIn <= 0) {
+        this.logger.debug(`Token for user ${userId} already expired`);
+        return;
       }
 
-      // Xóa cookie
-      res.clearCookie('accessToken', {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
-      });
+      await this.tokenService.blacklistToken(token, expiresIn);
 
-      // For better security, tell browsers to clear Authorization header
-      res.setHeader('Clear-Site-Data', '"cookies", "storage"');
-
-      this.logger.log(`User logged out: ${req.requester.sub}`);
+      // Verify the token was blacklisted
+      const isNowBlacklisted =
+        await this.tokenService.isTokenBlacklisted(token);
+      if (!isNowBlacklisted) {
+        this.logger.error(`Failed to blacklist token for user ${userId}`);
+      } else {
+        this.logger.log(`User logged out: ${userId}`);
+      }
     } catch (error) {
       this.logger.error(`Error during logout: ${error.message}`, error.stack);
-      // Vẫn trả về thành công ngay cả khi có lỗi
     }
+  }
+
+  async introspectToken(token: string): Promise<TokenPayload> {
+    // Verify token
+    const payload = await this.tokenService.verifyToken(token);
+    if (!payload) {
+      throw AppError.from(ErrInvalidToken, 401);
+    }
+
+    // Get user to validate current status
+    const user = await this.userRepo.get(payload.sub);
+    if (!user) {
+      throw AppError.from(ErrNotFound, 404);
+    }
+
+    // Check if user is active
+    if (user.status !== UserStatus.ACTIVE) {
+      throw AppError.from(ErrUserInactivated, 403);
+    }
+
+    return {
+      sub: user.id,
+      roleId: user.roleId,
+      role: user.role,
+      factoryId: user.factoryId || undefined,
+      lineId: user.lineId || undefined,
+      teamId: user.teamId || undefined,
+      groupId: user.groupId || undefined,
+    };
   }
 
   async refreshToken(
     token: string,
   ): Promise<{ token: string; expiresIn: number }> {
-    // Giải mã token hiện tại (không xác thực)
+    // Decode the existing token (without verifying it)
     const payload = this.tokenService.decodeToken(token);
     if (!payload) {
       throw AppError.from(ErrInvalidToken, 401);
     }
 
-    // Kiểm tra token có trong blacklist không
+    // Check if token is blacklisted
     const isBlacklisted = await this.tokenService.isTokenBlacklisted(token);
     if (isBlacklisted) {
       throw AppError.from(ErrInvalidToken, 401);
     }
 
-    // Lấy thông tin user để đảm bảo họ vẫn tồn tại và đang hoạt động
+    // Get user to ensure they still exist and are active
     const user = await this.userRepo.get(payload.sub);
     if (!user || user.status !== UserStatus.ACTIVE) {
       throw AppError.from(ErrUserInactivated, 403);
     }
 
-    // Tạo token mới với cùng payload nhưng thời hạn mới
+    // Create a new token with the same payload but new expiration
     const newToken = await this.tokenService.generateToken({
       sub: user.id,
       roleId: user.roleId,
@@ -272,10 +302,10 @@ export class AuthService implements IAuthService {
       groupId: user.groupId || undefined,
     });
 
-    // Tính thời gian hết hạn
+    // Calculate expiration time
     const expiresIn = this.tokenService.getExpirationTime(newToken);
 
-    // Đưa token cũ vào blacklist
+    // Blacklist the old token
     const oldTokenExpiresIn = this.tokenService.getExpirationTime(token);
     if (oldTokenExpiresIn > 0) {
       await this.tokenService.blacklistToken(token, oldTokenExpiresIn);
@@ -284,12 +314,51 @@ export class AuthService implements IAuthService {
     return { token: newToken, expiresIn };
   }
 
+  async changePassword(userId: string, dto: ChangePasswordDTO): Promise<void> {
+    // Get user
+    const user = await this.userRepo.get(userId);
+    if (!user) {
+      throw AppError.from(ErrNotFound, 404);
+    }
+
+    // Verify old password
+    const isMatch = await bcrypt.compare(
+      `${dto.oldPassword}.${user.salt}`,
+      user.password,
+    );
+    if (!isMatch) {
+      throw AppError.from(ErrInvalidUsernameAndPassword, 400);
+    }
+
+    // Check if new password is the same as old password
+    const isSamePassword = await bcrypt.compare(
+      `${dto.newPassword}.${user.salt}`,
+      user.password,
+    );
+    if (isSamePassword) {
+      throw AppError.from(ErrExistsPassword, 400);
+    }
+
+    // Generate new salt and hash for the new password
+    const salt = bcrypt.genSaltSync(10);
+    const hashPassword = await bcrypt.hash(`${dto.newPassword}.${salt}`, 12);
+
+    // Update user with new password
+    await this.userRepo.update(userId, {
+      password: hashPassword,
+      salt,
+      updatedAt: new Date(),
+    });
+
+    this.logger.log(`Password changed for user: ${userId}`);
+  }
+
   async requestPasswordReset(
     dto: RequestPasswordResetDTO,
   ): Promise<{ resetToken: string; expiryDate: Date; username: string }> {
     let user: User | null = null;
 
-    // Tìm user dựa trên thông tin đã cung cấp
+    // Find user based on provided credentials
     if (dto.username) {
       user = await this.userRepo.findByUsername(dto.username);
     } else if (dto.cardId && dto.employeeId) {
@@ -299,17 +368,17 @@ export class AuthService implements IAuthService {
     }
 
     if (!user) {
-      throw AppError.from(new Error('User not found'), 404);
+      throw AppError.from(ErrNotFound, 404);
     }
 
-    // Tạo token đặt lại mật khẩu
+    // Generate password reset token
     const resetToken = await this.tokenService.generateResetToken();
 
-    // Đặt thời hạn hết hạn là 1 giờ từ bây giờ
+    // Set expiry to 1 hour from now
     const expiryDate = new Date();
     expiryDate.setHours(expiryDate.getHours() + 1);
 
-    // Lưu token đặt lại vào user
+    // Save reset token to user
     await this.userRepo.update(user.id, {
       passwordResetToken: resetToken,
       passwordResetExpiry: expiryDate,
@@ -321,15 +390,15 @@ export class AuthService implements IAuthService {
     return { resetToken, expiryDate, username: user.username };
   }
 
-  async resetPassword(dto: UserResetPasswordDTO): Promise<void> {
+  async resetPassword(dto: ResetPasswordDTO): Promise<void> {
     let user: User | null = null;
 
-    // Tìm user dựa trên thông tin đã cung cấp
+    // Find user based on provided credentials
     if (dto.resetToken) {
-      // Nếu có reset token, sử dụng nó để tìm user
+      // If reset token is provided, use it to find the user
       user = await this.userRepo.findByResetToken(dto.resetToken);
 
-      // Xác minh token hợp lệ và chưa hết hạn
+      // Verify token is valid and not expired
       if (
         !user ||
         !user.passwordResetExpiry ||
@@ -338,20 +407,20 @@ export class AuthService implements IAuthService {
         throw AppError.from(ErrInvalidResetToken, 400);
       }
     } else if (dto.username) {
-      // Nếu có username, tìm theo username
+      // If username is provided, find by username
       user = await this.userRepo.findByUsername(dto.username);
     } else if (dto.cardId && dto.employeeId) {
-      // Nếu có cardId và employeeId, tìm theo chúng
+      // If cardId and employeeId are provided, find by those
       user = await this.userRepo.findByCardId(dto.cardId, dto.employeeId);
     } else {
       throw AppError.from(ErrMissingResetCredentials, 400);
     }
 
     if (!user) {
-      throw AppError.from(new Error('User not found'), 404);
+      throw AppError.from(ErrNotFound, 404);
     }
 
-    // Kiểm tra mật khẩu mới có giống mật khẩu cũ không
+    // Check if new password is the same as old password
     const isSamePassword = await bcrypt.compare(
       `${dto.password}.${user.salt}`,
       user.password,
@@ -360,11 +429,11 @@ export class AuthService implements IAuthService {
       throw AppError.from(ErrExistsPassword, 400);
     }
 
-    // Tạo salt và hash mới cho mật khẩu mới
+    // Generate new salt and hash for the new password
     const salt = bcrypt.genSaltSync(10);
     const hashPassword = await bcrypt.hash(`${dto.password}.${salt}`, 12);
 
-    // Cập nhật user với mật khẩu mới và xóa reset token
+    // Update user with new password and clear reset token
     await this.userRepo.update(user.id, {
       password: hashPassword,
       salt,
@@ -378,22 +447,5 @@ export class AuthService implements IAuthService {
     });
 
     this.logger.log(`Password reset completed for user: ${user.id}`);
-  }
-
-  // Phương thức hỗ trợ local strategy
-  async validateUser(username: string, password: string): Promise<any> {
-    const user = await this.userRepo.findByUsername(username);
-    if (!user) return null;
-    
-    const isMatch = await bcrypt.compare(
-      `${password}.${user.salt}`,
-      user.password,
-    );
-    
-    if (isMatch) {
-      const { password, salt, ...result } = user;
-      return result;
-    }
-    return null;
   }
 }

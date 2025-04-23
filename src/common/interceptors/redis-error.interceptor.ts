@@ -6,12 +6,12 @@ import {
   Logger,
   ServiceUnavailableException,
 } from '@nestjs/common';
-import { Observable, throwError } from 'rxjs';
+import { Observable, throwError, of } from 'rxjs';
 import { catchError } from 'rxjs/operators';
 
 /**
- * Interceptor để xử lý lỗi Redis và cung cấp degradation graceful
- * Điều này cho phép ứng dụng tiếp tục hoạt động ngay cả khi Redis không khả dụng
+ * Interceptor to handle Redis errors and provide graceful degradation
+ * This allows the application to continue functioning even when Redis is unavailable
  */
 @Injectable()
 export class RedisErrorInterceptor implements NestInterceptor {
@@ -20,28 +20,28 @@ export class RedisErrorInterceptor implements NestInterceptor {
   intercept(context: ExecutionContext, next: CallHandler): Observable<any> {
     return next.handle().pipe(
       catchError((error) => {
-        // Kiểm tra xem có phải lỗi Redis không
+        // Check if this is a Redis error
         if (this.isRedisError(error)) {
           return this.handleRedisError(error, context);
         }
 
-        // Nếu không phải lỗi Redis, ném lại lỗi để được xử lý bởi filter
+        // If not a Redis error, rethrow for handling by filters
         return throwError(() => error);
       }),
     );
   }
 
   /**
-   * Kiểm tra xem lỗi có phải từ Redis không
+   * Check if an error is from Redis
    */
   private isRedisError(error: any): boolean {
-    // Kiểm tra các loại lỗi cụ thể từ Redis
+    // Check for specific Redis error types
     if (error.name === 'ReplyError') return true;
     if (error.name === 'AbortError' && error.message.includes('redis'))
       return true;
     if (error.name === 'MaxRetriesPerRequestError') return true;
 
-    // Kiểm tra thông điệp lỗi
+    // Check error messages
     const redisErrorMessages = [
       'ECONNREFUSED',
       'Connection is closed',
@@ -59,7 +59,7 @@ export class RedisErrorInterceptor implements NestInterceptor {
   }
 
   /**
-   * Xử lý lỗi Redis tùy thuộc vào context
+   * Handle Redis errors based on context
    */
   private handleRedisError(
     error: any,
@@ -67,31 +67,51 @@ export class RedisErrorInterceptor implements NestInterceptor {
   ): Observable<any> {
     this.logger.warn(`Redis error intercepted: ${error.message}`);
 
-    // Lấy thông tin request để quyết định cách xử lý
+    // Get request info to determine handling
     const req = context.switchToHttp().getRequest();
     const path = req.path;
 
-    // Kiểm tra path để quyết định xử lý
-    if (
-      path.includes('/auth/') ||
-      path.includes('/login') ||
-      path.includes('/profile')
-    ) {
-      // Với các endpoint authentication, chúng ta sẽ trả về lỗi
+    // Check path to determine handling
+    const criticalPaths = [
+      '/auth/',
+      '/login',
+      '/profile',
+      '/token',
+      '/session',
+    ];
+
+    const isCriticalPath = criticalPaths.some((criticalPath) =>
+      path.includes(criticalPath),
+    );
+
+    if (isCriticalPath) {
+      // For authentication endpoints, return an error
       this.logger.error(`Redis error in critical path: ${path}`);
       return throwError(
         () =>
           new ServiceUnavailableException(
-            'Dịch vụ tạm thời không khả dụng, vui lòng thử lại sau',
+            'Service temporarily unavailable, please try again later',
           ),
       );
     }
 
-    // Với các endpoint không quan trọng, log lỗi và cho phép tiếp tục
+    // For non-critical endpoints, log error and return a fallback value
     this.logger.warn(`Bypassing Redis error for non-critical path: ${path}`);
 
-    // Tùy thuộc vào loại endpoint, có thể trả về dữ liệu mặc định
-    // Ví dụ: nếu đây là endpoint lấy dữ liệu cache, trả về empty result
-    return throwError(() => error);
+    // Determine the appropriate fallback value based on the endpoint
+    if (path.includes('/search') || path.includes('/list')) {
+      return of({ data: [], total: 0, message: 'Cache unavailable' });
+    }
+
+    if (path.includes('/count')) {
+      return of({ count: 0, message: 'Cache unavailable' });
+    }
+
+    if (path.includes('/check') || path.includes('/validate')) {
+      return of({ valid: false, message: 'Cache unavailable' });
+    }
+
+    // Default fallback for other endpoints
+    return of({ success: false, message: 'Cache unavailable' });
   }
 }

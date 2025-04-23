@@ -13,13 +13,13 @@ export const config = {
   rpc: {
     jwtSecret: process.env.JWT_SECRET_KEY || '200L@b.io',
     introspectUrl:
-      // `https://nestjs-daily-performance-be.vercel.app/api/v1/rpc/introspect`,
+      // `https://nestjs-daily-performance-be.vercel.app/api/v1/rpc/auth/introspect`,
       // process.env.VERIFY_TOKEN_URL ||
-      // `http://localhost:${port}/api/v1/rpc/introspect`,
+      // `http://localhost:${port}/api/v1/rpc/auth/introspect`,
       process.env.NODE_ENV === 'production'
-        ? `https://tbsgroup-management.vercel.app/api/v1/rpc/introspect`
-        : `http://localhost:${port}/api/v1/rpc/introspect` ||
-          `http://localhost:${port}/api/v1/rpc/introspect`,
+        ? `https://tbsgroup-management.vercel.app/api/v1/rpc/auth/introspect`
+        : `http://localhost:${port}/api/v1/rpc/auth/introspect` ||
+          `http://localhost:${port}/api/v1/rpc/auth/introspect`,
     postServiceURL:
       process.env.POST_SERVICE_URL || `http://localhost:${port}/api/v1`,
     userServiceURL:

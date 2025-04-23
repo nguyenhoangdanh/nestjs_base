@@ -341,23 +341,108 @@ export abstract class BasePrismaRepository<T, C, U>
   /**
    * Thực hiện transaction
    */
-  async transaction<R>(callback: (prisma: any) => Promise<R>): Promise<R> {
-    try {
-      // Sử dụng transaction của Prisma
-      return await this.prisma.$transaction(async (tx: any) => {
-        return await callback(tx);
-      });
-    } catch (error) {
-      this.logger.error(
-        `Transaction error for ${this.entityName}: ${error.message}`,
-        error.stack,
-      );
-      throw AppError.from(
-        new Error(
-          `Transaction failed for ${this.entityName}: ${error.message}`,
-        ),
-        500,
-      );
+  async transaction<R>(
+    callback: (prisma: any) => Promise<R>,
+    options?: {
+      maxRetries?: number;
+      timeout?: number;
+      isolationLevel?:
+        | 'ReadUncommitted'
+        | 'ReadCommitted'
+        | 'RepeatableRead'
+        | 'Serializable';
+    },
+  ): Promise<R> {
+    const maxRetries = options?.maxRetries || 3;
+    const timeout = options?.timeout || 30000; // 30 seconds default
+    const isolationLevel = options?.isolationLevel || 'ReadCommitted';
+
+    let retries = 0;
+    let lastError: any = null;
+
+    while (retries < maxRetries) {
+      try {
+        // Create a transaction with timeout
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+        try {
+          // Execute the transaction with the specified isolation level
+          const result = await this.prisma.$transaction(
+            async (tx: any) => {
+              return await callback(tx);
+            },
+            {
+              isolationLevel,
+              timeout,
+            },
+          );
+
+          clearTimeout(timeoutId);
+          return result;
+        } catch (error) {
+          clearTimeout(timeoutId);
+          throw error;
+        }
+      } catch (error) {
+        lastError = error;
+
+        // Only retry on specific error conditions that might be transient
+        const isTransientError =
+          error.code === 'P1000' || // Authentication failed
+          error.code === 'P1001' || // Can't reach database server
+          error.code === 'P1008' || // Operations timed out
+          error.code === 'P1017' || // Server closed the connection
+          error.code === 'P2034' || // Transaction failed due to conflict
+          error.name === 'AbortError'; // Our timeout was triggered
+
+        if (isTransientError && retries < maxRetries - 1) {
+          // Wait with exponential backoff before retrying
+          const waitTime = Math.min(100 * Math.pow(2, retries), 2000);
+          this.logger.warn(
+            `Transaction error (retry ${retries + 1}/${maxRetries}): ${error.message}. Retrying in ${waitTime}ms...`,
+          );
+
+          await new Promise((resolve) => setTimeout(resolve, waitTime));
+          retries++;
+          continue;
+        }
+
+        // Non-transient error or out of retries
+        break;
+      }
     }
+
+    // If we get here, all retries failed
+    this.logger.error(
+      `Transaction failed after ${retries} retries for ${this.entityName}: ${lastError.message}`,
+      lastError.stack,
+    );
+
+    throw AppError.from(
+      new Error(
+        `Transaction failed for ${this.entityName}: ${lastError.message}`,
+      ),
+      lastError instanceof AppError ? lastError.getStatusCode() : 500,
+    );
+  }
+
+  /**
+   * Execute multiple operations in a transaction
+   * Helper method to simplify common transaction patterns
+   */
+  async executeInTransaction<T>(
+    operations: ((tx: any) => Promise<any>)[],
+  ): Promise<T> {
+    return this.transaction(async (tx) => {
+      const results: any[] = [];
+
+      for (const operation of operations) {
+        const result = await operation(tx);
+        results.push(result);
+      }
+
+      return results.length === 1 ? results[0] : results;
+    });
   }
 }

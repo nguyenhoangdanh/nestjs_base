@@ -1,40 +1,42 @@
-// src/modules/auth/auth.module.ts
-import { Module } from '@nestjs/common';
+import { Module, Provider } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
-import { PassportModule } from '@nestjs/passport';
-import { UserModule } from '../user/user.module';
-import { RedisModule } from '../../common/redis';
-import { config } from '../../share/config';
-import { AuthController } from './auth.controller';
-import { AuthService } from './auth.service';
-import { JwtStrategy } from './strategies/jwt.strategy';
-import { LocalStrategy } from './strategies/local.strategy';
-import { TokenService } from './token.service';
+import { config } from 'src/share';
+import { TOKEN_INTROSPECTOR } from 'src/share/di-token';
+import { ShareModule } from 'src/share/module';
+import { AuthController, AuthRpcController } from './auth.controller';
 import { AUTH_SERVICE, TOKEN_SERVICE } from './auth.di-token';
+import { AuthService } from './auth.service';
+import { TokenService } from 'src/share/components/token.service';
+import { RedisModule } from 'src/common/redis';
+import { UserModule } from '../user/user.module';
+import { ROLE_REPOSITORY, ROLE_SERVICE } from '../role/role.di-token';
+import { RoleService } from '../role/role.service';
+import { RolePrismaRepository } from '../role/role-prisma.repo';
+
+const services: Provider[] = [
+  { provide: AUTH_SERVICE, useClass: AuthService },
+  { provide: TOKEN_SERVICE, useClass: TokenService },
+  // Provide TOKEN_INTROSPECTOR using the same instance as TOKEN_SERVICE
+  { provide: TOKEN_INTROSPECTOR, useExisting: TOKEN_SERVICE },
+  { provide: ROLE_SERVICE, useClass: RoleService },
+];
+
+const repositories: Provider[] = [
+  { provide: ROLE_REPOSITORY, useClass: RolePrismaRepository },
+];
 
 @Module({
   imports: [
-    PassportModule,
+    ShareModule,
+    RedisModule,
+    UserModule, // Import UserModule to use its repositories
     JwtModule.register({
-      secret: config.jwtSecret,
-      signOptions: { expiresIn: '1d' }, // Mặc định hết hạn sau 1 ngày
+      secret: config.rpc.jwtSecret,
+      signOptions: { expiresIn: '7d' },
     }),
-    UserModule, // Cần import UserModule để sử dụng UserRepository
-    RedisModule, // Để sử dụng blacklist token
   ],
-  controllers: [AuthController],
-  providers: [
-    {
-      provide: AUTH_SERVICE,
-      useClass: AuthService,
-    },
-    {
-      provide: TOKEN_SERVICE,
-      useClass: TokenService,
-    },
-    LocalStrategy,
-    JwtStrategy,
-  ],
-  exports: [AUTH_SERVICE, TOKEN_SERVICE],
+  controllers: [AuthController, AuthRpcController],
+  providers: [...services, ...repositories],
+  exports: [AUTH_SERVICE, TOKEN_SERVICE, TOKEN_INTROSPECTOR],
 })
 export class AuthModule {}

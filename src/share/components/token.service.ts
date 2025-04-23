@@ -3,12 +3,12 @@ import { JwtService } from '@nestjs/jwt';
 import { TokenIntrospectResult, TokenPayload } from 'src/share';
 import { createHash, randomBytes } from 'crypto';
 import Redis from 'ioredis';
-import { ITokenService } from '../../modules/user/user.port';
 import {
   REDIS_CACHE_SERVICE,
   REDIS_CLIENT,
 } from 'src/common/redis/redis.constants';
 import { RedisCacheService } from 'src/common/redis';
+import { ITokenService } from 'src/modules/auth/auth.port';
 
 @Injectable()
 export class TokenService implements ITokenService {

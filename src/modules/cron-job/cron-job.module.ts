@@ -9,11 +9,7 @@ import { RedisModule } from '../../common/redis';
 import { ConfigModule } from '@nestjs/config';
 
 @Module({
-  imports: [
-    ScheduleModule.forRoot(),
-    RedisModule,
-    ConfigModule,
-  ],
+  imports: [ScheduleModule.forRoot(), RedisModule, ConfigModule],
   providers: [
     PrismaService,
     AttendanceJobService,

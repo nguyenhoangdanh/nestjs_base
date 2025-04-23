@@ -103,3 +103,33 @@ export function CrudSorting(
     return descriptor;
   };
 }
+
+/**
+ * Decorator để định nghĩa vai trò cho một endpoint cụ thể
+ */
+export function CrudRoles(roles: string[]) {
+  return (target: any, key: string, descriptor: PropertyDescriptor) => {
+    SetMetadata('crud:roles', roles)(target, key, descriptor);
+    return descriptor;
+  };
+}
+
+/**
+ * Decorator để xác định một controller implement CRUD endpoints
+ */
+export function CrudApi(options: { path: string; entityName: string }) {
+  return (target: any) => {
+    SetMetadata('crud:api', options)(target);
+    return target;
+  };
+}
+
+/**
+ * Decorator để cấu hình validation schema cho một endpoint
+ */
+export function CrudValidation(schema: any) {
+  return (target: any, key: string, descriptor: PropertyDescriptor) => {
+    SetMetadata('crud:validation', schema)(target, key, descriptor);
+    return descriptor;
+  };
+}

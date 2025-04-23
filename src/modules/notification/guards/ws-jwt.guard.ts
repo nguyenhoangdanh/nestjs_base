@@ -1,5 +1,10 @@
 // src/modules/notification/guards/ws-jwt.guard.ts
-import { CanActivate, ExecutionContext, Inject, Injectable } from '@nestjs/common';
+import {
+  CanActivate,
+  ExecutionContext,
+  Inject,
+  Injectable,
+} from '@nestjs/common';
 import { WsException } from '@nestjs/websockets';
 import { TOKEN_SERVICE } from '../../auth/auth.di-token';
 import { ITokenService } from '../../auth/auth.interface';
